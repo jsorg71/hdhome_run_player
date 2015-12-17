@@ -5,7 +5,7 @@ CFLAGS = -Wall -O2 -I/usr/lib/libhdhomerun/
 
 LDFLAGS =
 
-LIBS = -lhdhomerun
+LIBS = -lhdhomerun -lavcodec
 
 all: hdhome_run_player
 
