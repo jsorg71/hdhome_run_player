@@ -58,7 +58,6 @@ int process_mpeg_ts_packet(const void* data, int bytes, const struct tmpegts_cb*
     const unsigned char* data8_end;
     int cb_bytes;
     int index;
-    long long time;
 
     memset(&mpegts, 0, sizeof(mpegts));
     data8 = (const unsigned char*) data;
