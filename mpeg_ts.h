@@ -34,8 +34,11 @@ struct tmpegts
     int transport_private_data_flag;
     int adaptation_field_extension_flag;
 
+    unsigned char pcr[6];
+
 };
 
+int get_mstime(void);
 int hex_dump(const void* data, int bytes);
 int process_mpeg_ts_packet(const void* data, int bytes, const struct tmpegts_cb* cb, void* udata);
 

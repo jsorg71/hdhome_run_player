@@ -2,8 +2,17 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/time.h>
 
 #include "mpeg_ts.h"
+
+int get_mstime(void)
+{
+    struct timeval tp;
+
+    gettimeofday(&tp, 0);
+    return (tp.tv_sec * 1000) + (tp.tv_usec / 1000);
+}
 
 int hex_dump(const void* data, int bytes)
 {
@@ -49,6 +58,7 @@ int process_mpeg_ts_packet(const void* data, int bytes, const struct tmpegts_cb*
     const unsigned char* data8_end;
     int cb_bytes;
     int index;
+    long long time;
 
     memset(&mpegts, 0, sizeof(mpegts));
     data8 = (const unsigned char*) data;
@@ -95,6 +105,17 @@ int process_mpeg_ts_packet(const void* data, int bytes, const struct tmpegts_cb*
         if (mpegts.pcr_flag)
         {
             /* 48 bit */
+            memcpy(mpegts.pcr, data8 - mpegts.adaptation_field_length + 1, 6);
+            /* 33 bit time */
+            //mpegts.pcr_time = mpegts.pcr[0];
+            //mpegts.pcr_time <<= 8;
+            //mpegts.pcr_time |= mpegts.pcr[1];
+            //mpegts.pcr_time <<= 8;
+            //mpegts.pcr_time |= mpegts.pcr[2];
+            //mpegts.pcr_time <<= 8;
+            //mpegts.pcr_time |= mpegts.pcr[3];
+            //mpegts.pcr_time <<= 1;
+            //mpegts.pcr_time |= ((mpegts.pcr[4] & 0x80) >> 7);
         }
         if (mpegts.opcr_flag)
         {
