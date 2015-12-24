@@ -9,8 +9,9 @@
 #include "hdhome_run_x11.h"
 #include "hdhome_run_pa.h"
 #include "list.h"
+#include "hdhome_run_avcodec.h"
 
-#include <libavcodec/avcodec.h>
+#define HD_AUDIO_MSDELAY 1600
 
 struct video_info
 {
@@ -22,11 +23,10 @@ struct video_info
     int frame_data_pos;
     int continuity_counter;
     int pad1;
-    AVCodecContext* codec_context;
-    AVCodec* codec;
-    AVFrame* frame;
     struct list* frame_list;
     int frame_delay;
+    int pad2;
+    void* mpeg2_handle;
 };
 
 struct audio_info
@@ -39,11 +39,8 @@ struct audio_info
     int frame_data_pos;
     int continuity_counter;
     int pad1;
-    AVCodecContext* codec_context;
-    AVCodec* codec;
-    AVFrame* frame;
-    unsigned char* left_over;
-    int left_over_bytes;
+    void* ac3_handle;
+    void* pa_handle;
 };
 
 struct video_audio_info
@@ -56,11 +53,7 @@ struct ptr_size
 {
     unsigned char* ptr;
     int bytes;
-    unsigned int mstime;
 };
-
-static unsigned int g_mstime = 0;
-static void* g_hshome_run_pa = 0;
 
 /*****************************************************************************/
 int
@@ -68,95 +61,88 @@ tmpegts_video_cb(const void* data, int data_bytes,
                  const struct tmpegts* mpegts, void* udata)
 {
     int decoded;
-    int len;
     int rv;
     int remainder;
-    int decoded_size;
     int decoded_data_bytes;
-    AVPacket pkt;
     struct video_info* vi;
     uint8_t* decoded_data;
-    AVFrame* frame;
     struct ptr_size* ps;
+    unsigned char* cdata;
+    int cdata_bytes;
+    int cdata_bytes_processed;
+    int error;
+    int width;
+    int height;
+    int format;
+    int out_data_bytes;
 
     rv = 0;
     vi = ((struct video_audio_info*)udata)->vi;
     if (mpegts->payload_unit_start_indicator) 
     {
-        //printf("video data bytes %d\n", vi->frame_data_pos);
         if (vi->frame_data_pos > 0)
         {
             ps = (struct ptr_size*) calloc(sizeof(struct ptr_size), 1);
             ps->ptr = (unsigned char*) malloc(vi->frame_data_pos);
             memcpy(ps->ptr, vi->frame_data, vi->frame_data_pos);
             ps->bytes = vi->frame_data_pos;
-            ps->mstime = get_mstime();
             list_add_item(vi->frame_list, (long)ps);
             ps = (struct ptr_size*)list_get_item(vi->frame_list, 0);
             while (vi->frame_list->count > vi->frame_delay)
             {
                 list_remove_item(vi->frame_list, 0);
-                //hex_dump(vi->frame_data, 128);
                 /* https://en.wikipedia.org/wiki/Packetized_elementary_stream */
                 remainder = ps->ptr[8];
-                av_init_packet(&pkt);
-                pkt.data = ps->ptr + (9 + remainder);
-                pkt.size = ps->bytes - (9 + remainder);
-                while (pkt.size > 0)
+                cdata = ps->ptr + (9 + remainder);
+                cdata_bytes = ps->bytes - (9 + remainder);
+                while (cdata_bytes > 0)
                 {
-                    decoded = 0;
-                    len = avcodec_decode_video2(vi->codec_context,
-                                                vi->frame,
-                                                &decoded, &pkt);
-                    if (len < 0)
+                    error = hdhome_run_avcodec_mpeg2_decode(vi->mpeg2_handle,
+                                                            cdata, cdata_bytes,
+                                                            &cdata_bytes_processed,
+                                                            &decoded);
+                    if (error != 0)
                     {
-                        printf("tmpegts_video_cb: error decoding %d\n", len);
-                        rv = 1;
+                        printf("tmpegts_video_cb: error decoding %d\n", error);
                         break;
                     }
+                    cdata += cdata_bytes_processed;
+                    cdata_bytes -= cdata_bytes_processed;
                     if (decoded)
                     {
-
-                        if (vi->codec_context->height > 720)
+                        error = hdhome_run_avcodec_mpeg2_get_frame_info(vi->mpeg2_handle,
+                                                                        &width, &height,
+                                                                        &format,
+                                                                        &out_data_bytes);
+                        if (error == 0)
                         {
-                            vi->frame_delay = 30;
-                        }
-                        else
-                        {
-                            vi->frame_delay = 60;
-                        }
-
-                        decoded_size = avpicture_get_size(vi->codec_context->pix_fmt,
-                                                          vi->codec_context->width,
-                                                          vi->codec_context->height);
-                        if (hdhome_run_x11_get_buffer(vi->codec_context->width,
-                                                      vi->codec_context->height,
-                                                      vi->codec_context->pix_fmt,
-                                                      (void**)(&decoded_data),
-                                                      &decoded_data_bytes) == 0)
-                        {
-                            if (decoded_size <= decoded_data_bytes)
+                            if (height > 720)
                             {
-                                frame = avcodec_alloc_frame();
-                                avpicture_fill((AVPicture*)frame, decoded_data,
-                                               vi->codec_context->pix_fmt,
-                                               vi->codec_context->width,
-                                               vi->codec_context->height);
-                                av_picture_copy((AVPicture*)frame,
-                                                (AVPicture*)(vi->frame),
-                                                vi->codec_context->pix_fmt,
-                                                vi->codec_context->width,
-                                                vi->codec_context->height);
-                                av_free(frame);
-                                hdhome_run_x11_show_buffer(vi->codec_context->width,
-                                                           vi->codec_context->height,
-                                                           vi->codec_context->pix_fmt,
-                                                           decoded_data);
+                                vi->frame_delay = (30 * HD_AUDIO_MSDELAY) / 1000;
+                            }
+                            else
+                            {
+                                vi->frame_delay = (60 * HD_AUDIO_MSDELAY) / 1000;
+                            }
+                            error = hdhome_run_x11_get_buffer(width, height, format,
+                                                              (void**)(&decoded_data),
+                                                              &decoded_data_bytes);
+                            if (error == 0)
+                            {
+                                if (decoded_data_bytes >= out_data_bytes)
+                                {
+                                    error = hdhome_run_avcodec_mpeg2_get_frame_data(vi->mpeg2_handle,
+                                                                                    decoded_data,
+                                                                                    out_data_bytes);
+                                    if (error == 0)
+                                    {
+                                        hdhome_run_x11_show_buffer(width, height, format, 
+                                                                   decoded_data);
+                                    }
+                                }
                             }
                         }
                     }
-                    pkt.size -= len; 
-                    pkt.data += len;
                 }
                 free(ps->ptr);
                 free(ps);
@@ -195,80 +181,79 @@ int
 tmpegts_audio_cb(const void* data, int data_bytes,
                  const struct tmpegts* mpegts, void* udata)
 {
-    int decoded;
-    int len;
     int rv;
     int remainder;
-    int frame_size;
-    int play_data_bytes;
-    int play_data_bytes1;
-    unsigned char* play_data;
-    AVPacket pkt;
     struct audio_info* ai;
+    unsigned char* cdata;
+    void* out_data;
+    int cdata_bytes;
+    int cdata_bytes_processed;
+    int out_data_bytes;
+    int out_data_bytes_processed;
+    int error;
+    int decoded;
+    int channels;
+    int format;
 
     rv = 0;
     ai = ((struct video_audio_info*)udata)->ai;
     if (mpegts->payload_unit_start_indicator)
     {
-        g_mstime = get_mstime();
-        //printf("audio data bytes %d\n", ai->frame_data_pos);
         if (ai->frame_data_pos > 0)
         {
-            //hex_dump(ai->frame_data, 128);
             /* https://en.wikipedia.org/wiki/Packetized_elementary_stream */
             remainder = (unsigned char)(ai->frame_data[8]);
-            av_init_packet(&pkt);
-            pkt.data = (unsigned char*)(ai->frame_data + (9 + remainder));
-            pkt.size = ai->frame_data_pos - (9 + remainder);
-            while (pkt.size > 0)
+            cdata = (unsigned char*)(ai->frame_data + (9 + remainder));
+            cdata_bytes = ai->frame_data_pos - (9 + remainder);
+            while (cdata_bytes > 0)
             {
-                decoded = 0;
-                len = avcodec_decode_audio4(ai->codec_context,
-                                            ai->frame,
-                                            &decoded, &pkt);
-                if (len < 0)
+                error = hdhome_run_avcodec_ac3_decode(ai->ac3_handle,
+                                                      cdata, cdata_bytes,
+                                                      &cdata_bytes_processed,
+                                                      &decoded);
+                if (error != 0)
                 {
-                    printf("tmpegts_audio_cb: error decoding %d\n", len);
-                    rv = 1;
+                    printf("tmpegts_audio_cb: error decoding %d\n", error);
                     break;
                 }
+                cdata += cdata_bytes_processed;
+                cdata_bytes -= cdata_bytes_processed;
                 if (decoded)
                 {
-                    frame_size = av_samples_get_buffer_size(NULL,
-                                                            ai->codec_context->channels,
-                                                            ai->frame->nb_samples,
-                                                            ai->codec_context->sample_fmt,
-                                                            1);
-                    if (frame_size > 0)
+                    error =  hdhome_run_avcodec_ac3_get_frame_info(ai->ac3_handle,
+                                                                   &channels,
+                                                                   &format,
+                                                                   &out_data_bytes);
+                    if ((error == 0) && (out_data_bytes > 0))
                     {
-                        play_data_bytes = ai->left_over_bytes + frame_size;
-                        play_data = (unsigned char*)malloc(play_data_bytes);
-                        memcpy(play_data, ai->left_over, ai->left_over_bytes);
-                        memcpy(play_data + ai->left_over_bytes, ai->frame->data[0], frame_size);
-                        play_data_bytes1 = play_data_bytes;
-                        hdhome_run_pa_play_non_blocking(g_hshome_run_pa,
-                                                        play_data,
-                                                        &play_data_bytes);
-                        if (play_data_bytes != 0)
+                        out_data = malloc(out_data_bytes);
+                        error =  hdhome_run_avcodec_ac3_get_frame_data(ai->ac3_handle,
+                                                                       out_data,
+                                                                       out_data_bytes);
+                        if (error == 0)
                         {
-                            if (play_data_bytes > frame_size)
+                            if (ai->pa_handle == 0)
                             {
-                                play_data_bytes = frame_size;
+                                ai->pa_handle = hdhome_run_pa_init("hdhome_run_player");
+                                if (ai->pa_handle != 0)
+                                {
+                                    hdhome_run_pa_start(ai->pa_handle, "hdhome_run_player",
+                                                        HD_AUDIO_MSDELAY,
+                                                        CAP_PA_FORMAT_48000_6CH_16LE);
+                                }
                             }
-                            free(ai->left_over);
-                            ai->left_over = (unsigned char*)malloc(play_data_bytes);
-                            memcpy(ai->left_over, play_data + play_data_bytes1 - play_data_bytes, play_data_bytes);
-                            ai->left_over_bytes = play_data_bytes;
+                            hdhome_run_pa_play_non_blocking(ai->pa_handle,
+                                                            out_data, out_data_bytes,
+                                                            &out_data_bytes_processed);
+                            if (out_data_bytes != out_data_bytes_processed)
+                            {
+                                printf("tmpegts_audio_cb: dropping audio data, %d bytes\n",
+                                       out_data_bytes - out_data_bytes_processed);
+                            }
                         }
-                        else
-                        {
-                            ai->left_over_bytes = 0;
-                        }
-                        free(play_data);
+                        free(out_data);
                     }
                 }
-                pkt.size -= len;
-                pkt.data += len;
             }
             ai->frame_data_pos = 0;
         }
@@ -379,77 +364,28 @@ main(int argc, char** argv)
     vai.vi = &vi;
     vai.ai = &ai;
 
+    if (hdhome_run_avcodec_init() != 0)
+    {
+        printf("hdhome_run_avcodec_init failed\n");
+        return 1;
+    }
+
     if (hdhome_run_x11_init() != 0)
     {
         printf("hdhome_run_x11_init failed\n");
         return 1;
     }
 
-    avcodec_register_all();
-    vi.codec_context = avcodec_alloc_context3(NULL);
-    if (vi.codec_context == 0)
+    error = hdhome_run_avcodec_ac3_create(&(ai.ac3_handle));
+    if (error != 0)
     {
-        printf("avcodec_alloc_context3 failed\n");
-        return 0;
-    }
-    vi.codec = avcodec_find_decoder(CODEC_ID_MPEG2VIDEO);
-    if (vi.codec == 0)
-    {
-        printf("avcodec_find_decoder failed\n");
-        return 0;
-    }
-    error = avcodec_open2(vi.codec_context, vi.codec, NULL);
-    printf("video avcodec_open2 error %d\n", error);
-    vi.frame = avcodec_alloc_frame();
-    if (vi.frame == 0)
-    {
-        printf("avcodec_alloc_frame failed\n");
-        return 0;
+        printf("hdhome_run_avcodec_ac3_create failed error %d\n", error);
     }
 
-    ai.codec_context = avcodec_alloc_context3(NULL);
-    if (ai.codec_context == 0)
+    error = hdhome_run_avcodec_mpeg2_create(&(vi.mpeg2_handle));
+    if (error != 0)
     {
-        printf("avcodec_alloc_context3 failed\n");
-        return 0;
-    }
-
-    ai.codec = avcodec_find_decoder(CODEC_ID_AC3);
-    if (ai.codec == 0)
-    {
-        printf("avcodec_find_decoder failed\n");
-        return 0;
-    }
-
-    g_hshome_run_pa = hdhome_run_pa_init("hdhome_run_player");
-    if (g_hshome_run_pa != 0)
-    {
-        hdhome_run_pa_start(g_hshome_run_pa, "hdhome_run_player", 1000,
-        //hdhome_run_pa_start(g_hshome_run_pa, "hdhome_run_player", 0,
-                            CAP_PA_FORMAT_48000_6CH_16LE);
-    }
-
-    //if (ai.codec->capabilities & CODEC_CAP_TRUNCATED)
-    //{
-    //    ai.codec_context->flags |= CODEC_FLAG_TRUNCATED;
-    //}
-
-    //ai.codec_context->channels = 6;
-    //ai.codec_context->sample_rate = 48000;
-    //ai.codec_context->bit_rate = 448000;
-    //ai.codec_context->block_align = 0;
-    //ai.codec_context->codec_id = CODEC_ID_AC3;
-    //ai.codec_context->codec_type = 1;
-    //ai.codec_context->bits_per_raw_sample = 16;
-    //printf("FF_INPUT_BUFFER_PADDING_SIZE %d\n", FF_INPUT_BUFFER_PADDING_SIZE);
-
-    error = avcodec_open2(ai.codec_context, ai.codec, NULL);
-    printf("audio avcodec_open2 error %d\n", error);
-    ai.frame = avcodec_alloc_frame();
-    if (ai.frame == 0)
-    {
-        printf("avcodec_alloc_frame failed\n");
-        return 0;
+        printf("hdhome_run_avcodec_mpeg2_create failed error %d\n", error);
     }
 
     hdhr = hdhomerun_device_create(HDHOMERUN_DEVICE_ID_WILDCARD, 0, 0, 0); 

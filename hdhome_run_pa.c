@@ -1,3 +1,20 @@
+/**
+ * pulseaudio calls
+ *
+ * Copyright 2015 Jay Sorg <jay.sorg@gmail.com>
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -275,7 +292,8 @@ hdhome_run_pa_stop(void* handle)
     self = (struct hdhomerun_pa*)handle;
     pa_threaded_mainloop_lock(self->pa_mainloop);
     operation = pa_stream_drain(self->pa_stream,
-                                hdhome_run_pa_pulse_stream_success_callback, self);
+                                hdhome_run_pa_pulse_stream_success_callback,
+                                self);
     while (pa_operation_get_state(operation) == PA_OPERATION_RUNNING)
     {
         pa_threaded_mainloop_wait(self->pa_mainloop);
@@ -310,7 +328,7 @@ hdhome_run_pa_play(void* handle, void* data, int data_bytes)
         {
             LLOGLN(0, ("hdhome_run_pa_play: pa_stream_writable_size failed"));
             pa_threaded_mainloop_unlock(self->pa_mainloop);
-            return 2;
+            return 1;
         }
         if (len > data_bytes)
         {
@@ -334,28 +352,31 @@ hdhome_run_pa_play(void* handle, void* data, int data_bytes)
 
 /******************************************************************************/
 int
-hdhome_run_pa_play_non_blocking(void* handle, void* data, int* data_bytes)
+hdhome_run_pa_play_non_blocking(void* handle, void* data, int data_bytes,
+                                int* data_bytes_processed)
 {
     struct hdhomerun_pa* self;
     int len;
     int ret;
+    int bytes_played;
     char* src;
 
     self = (struct hdhomerun_pa*)handle;
     pa_threaded_mainloop_lock(self->pa_mainloop);
     src = (char*)data;
-    if (*data_bytes > 0)
+    bytes_played = 0;
+    if (data_bytes > 0)
     {
         len = pa_stream_writable_size(self->pa_stream);
         if (len < 0)
         {
             LLOGLN(0, ("hdhome_run_pa_play: pa_stream_writable_size failed"));
             pa_threaded_mainloop_unlock(self->pa_mainloop);
-            return 2;
+            return 1;
         }
-        if (len > *data_bytes)
+        if (len > data_bytes)
         {
-            len = *data_bytes;
+            len = data_bytes;
         }
         ret = pa_stream_write(self->pa_stream, src, len, NULL, 0LL,
                               PA_SEEK_RELATIVE);
@@ -366,9 +387,13 @@ hdhome_run_pa_play_non_blocking(void* handle, void* data, int* data_bytes)
             pa_threaded_mainloop_unlock(self->pa_mainloop);
             return 2;
         }
-        *data_bytes -= len;
+        bytes_played += len;
     }
     pa_threaded_mainloop_unlock(self->pa_mainloop);
+    if (data_bytes_processed != 0)
+    {
+        *data_bytes_processed = bytes_played;
+    }
     return 0;
 }
 
