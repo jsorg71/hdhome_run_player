@@ -34,12 +34,6 @@
 // LIBAVCODEC_VERSION_MAJOR 56 debian 8
 
 #if LIBAVCODEC_VERSION_MAJOR > 55
-#include <libavresample/avresample.h>
-#define HD_DO_RESAMPLE 1
-#else
-#endif
-
-#if LIBAVCODEC_VERSION_MAJOR > 55
 #define CODEC_ID_AC3                AV_CODEC_ID_AC3
 #define CODEC_ID_MPEG2VIDEO         AV_CODEC_ID_MPEG2VIDEO
 #define AVCODEC_ALLOC_FRAME         av_frame_alloc
@@ -54,9 +48,6 @@ struct avcodec_ac3
     AVCodecContext* codec_context;
     AVCodec* codec;
     AVFrame* frame;
-#if HD_DO_RESAMPLE
-    AVAudioResampleContext* rs_ctx;
-#endif
 };
 
 struct avcodec_mpeg2
@@ -110,9 +101,6 @@ hdhome_run_avcodec_ac3_create(void** obj)
         return 5;
     }
     self->frame = AVCODEC_ALLOC_FRAME();
-#if HD_DO_RESAMPLE
-    self->rs_ctx = avresample_alloc_context();
-#endif
     *obj = self;
     return 0;
 }
@@ -141,9 +129,6 @@ hdhome_run_avcodec_ac3_decode(void* obj, void* cdata, int cdata_bytes,
     AVPacket pkt;
     int len;
     int bytes_processed;
-#if HD_DO_RESAMPLE
-    AVFrame* frame;
-#endif
 
     self = (struct avcodec_ac3*)obj;
     if (self == NULL)
@@ -170,18 +155,6 @@ hdhome_run_avcodec_ac3_decode(void* obj, void* cdata, int cdata_bytes,
         bytes_processed += len;
         if (*decoded)
         {
-#if HD_DO_RESAMPLE
-            if (self->frame->format != AV_SAMPLE_FMT_S16)
-            {
-                frame = av_frame_alloc();
-                frame->channel_layout = self->frame->channel_layout;
-                frame->sample_rate = self->frame->sample_rate;
-                frame->format = AV_SAMPLE_FMT_S16;
-                avresample_convert_frame(self->rs_ctx, frame, self->frame);
-                av_frame_free(&(self->frame));
-                self->frame = frame;
-            }
-#endif
             *cdata_bytes_processed = bytes_processed;
             return 0;
         }
@@ -202,13 +175,18 @@ hdhome_run_avcodec_ac3_get_frame_info(void* obj, int* channels, int* format,
     {
         return 1;
     }
-    frame_size = av_samples_get_buffer_size(NULL,
+    if ((self->frame->format != AV_SAMPLE_FMT_S16) &&
+        (self->frame->format != AV_SAMPLE_FMT_FLTP))
+    {
+        return 2;
+    }
+    frame_size = av_samples_get_buffer_size(NULL, 
                                             self->codec_context->channels,
                                             self->frame->nb_samples,
-                                            self->frame->format,
+                                            AV_SAMPLE_FMT_S16,
                                             1);
     *channels = self->codec_context->channels;
-    *format = self->frame->format;
+    *format = AV_SAMPLE_FMT_S16;
     *bytes = frame_size;
     return 0;
 }
@@ -217,13 +195,51 @@ int
 hdhome_run_avcodec_ac3_get_frame_data(void* obj, void* data, int data_bytes)
 {
     struct avcodec_ac3* self;
+    float* src[8];
+    short* dst;
+    int index;
+    int plane_stride;
 
     self = (struct avcodec_ac3*)obj;
     if (self == NULL)
     {
         return 1;
     }
-    memcpy(data, self->frame->data[0], data_bytes);
+    if (self->frame->format == AV_SAMPLE_FMT_S16)
+    {
+        memcpy(data, self->frame->data[0], data_bytes);
+    }
+    else if (self->frame->format != AV_SAMPLE_FMT_FLTP)
+    {
+        /* convert float to sint16 */
+        plane_stride = ((char*)(self->frame->data[1])) - ((char*)(self->frame->data[0]));
+        src[0] = (float*) (((char*)(self->frame->data[0])) + plane_stride * 0);
+        src[1] = (float*) (((char*)(self->frame->data[0])) + plane_stride * 1);
+        src[2] = (float*) (((char*)(self->frame->data[0])) + plane_stride * 2);
+        src[3] = (float*) (((char*)(self->frame->data[0])) + plane_stride * 3);
+        src[4] = (float*) (((char*)(self->frame->data[0])) + plane_stride * 4);
+        src[5] = (float*) (((char*)(self->frame->data[0])) + plane_stride * 5);
+        dst = (short*)data;
+        for (index = 0; index < self->frame->nb_samples; index++)
+        {
+            if (data_bytes < 6)
+            {
+                break;
+            }
+            dst[0] = src[0][index] * 32768; 
+            dst[1] = src[1][index] * 32768;
+            dst[2] = src[2][index] * 32768;
+            dst[3] = src[3][index] * 32768;
+            dst[4] = src[4][index] * 32768;
+            dst[5] = src[5][index] * 32768;
+            dst += 6;
+            data_bytes -= 6;
+        }
+    }
+    else
+    {
+        return 1;
+    }
     return 0;
 }
 
