@@ -212,13 +212,23 @@ hdhome_run_avcodec_ac3_get_frame_data(void* obj, void* data, int data_bytes)
     else if (self->frame->format == AV_SAMPLE_FMT_FLTP)
     {
         /* convert float to sint16 */
-        plane_stride = ((char*)(self->frame->data[1])) - ((char*)(self->frame->data[0]));
-        src[0] = (float*) (((char*)(self->frame->data[0])) + plane_stride * 0);
-        src[1] = (float*) (((char*)(self->frame->data[0])) + plane_stride * 1);
-        src[2] = (float*) (((char*)(self->frame->data[0])) + plane_stride * 2);
-        src[3] = (float*) (((char*)(self->frame->data[0])) + plane_stride * 3);
-        src[4] = (float*) (((char*)(self->frame->data[0])) + plane_stride * 4);
-        src[5] = (float*) (((char*)(self->frame->data[0])) + plane_stride * 5);
+#if LIBAVCODEC_VERSION_MAJOR > 53
+        src[0] = (float*)(self->frame->data[0]);
+        src[1] = (float*)(self->frame->data[1]);
+        src[2] = (float*)(self->frame->data[2]);
+        src[3] = (float*)(self->frame->data[3]);
+        src[4] = (float*)(self->frame->data[4]);
+        src[5] = (float*)(self->frame->data[5]);
+#else
+        /* self->frame->data only has 4 elements */
+        plane_stride = ((char*)(self->frame->data[1])) - ((char *)(self->frame->data[0]));
+        src[0] = (float*)(((char*)(self->frame->data[0])) + plane_stride * 0);
+        src[1] = (float*)(((char*)(self->frame->data[0])) + plane_stride * 1);
+        src[2] = (float*)(((char*)(self->frame->data[0])) + plane_stride * 2);
+        src[3] = (float*)(((char*)(self->frame->data[0])) + plane_stride * 3);
+        src[4] = (float*)(((char*)(self->frame->data[0])) + plane_stride * 4);
+        src[5] = (float*)(((char*)(self->frame->data[0])) + plane_stride * 5);
+#endif
         dst = (short*)data;
         for (index = 0; index < self->frame->nb_samples; index++)
         {
