@@ -171,7 +171,7 @@ hdhome_run_x11_main_loop(int sck, tmlcb cb, void* udata)
     cont = 1;
     while (cont)
     {
-        max_fd = 0; 
+        max_fd = 0;
         FD_ZERO(&rfds_set);
         //printf("--%d\n", g_disp_fd);
         FD_SET(g_disp_fd, &rfds_set);

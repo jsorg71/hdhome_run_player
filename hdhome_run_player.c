@@ -78,7 +78,7 @@ tmpegts_video_cb(const void* data, int data_bytes,
 
     rv = 0;
     vi = ((struct video_audio_info*)udata)->vi;
-    if (mpegts->payload_unit_start_indicator) 
+    if (mpegts->payload_unit_start_indicator)
     {
         if (vi->frame_data_pos > 0)
         {
@@ -136,7 +136,7 @@ tmpegts_video_cb(const void* data, int data_bytes,
                                                                                     out_data_bytes);
                                     if (error == 0)
                                     {
-                                        hdhome_run_x11_show_buffer(width, height, format, 
+                                        hdhome_run_x11_show_buffer(width, height, format,
                                                                    decoded_data);
                                     }
                                 }
@@ -303,9 +303,9 @@ main_loop_callback(int sck, void* udata)
     error = 0;
     bytes = 32 * 1024;
     data = hdhomerun_device_stream_recv(mlcbi->hdhr, bytes, &bytes);
-    while (data != 0 && error == 0)
+    while ((data != 0) && (error == 0))
     {
-        while (error == 0 && bytes > 3)
+        while ((error == 0) && (bytes > 3))
         {
             lbytes = bytes;
             if (lbytes > 188)
@@ -313,12 +313,12 @@ main_loop_callback(int sck, void* udata)
                 lbytes = 188;
             }
             error = process_mpeg_ts_packet(data, lbytes, mlcbi->cb, mlcbi->vai);
-            data += lbytes; 
+            data += lbytes;
             bytes -= lbytes;
         }
         if (error == 0)
         {
-            bytes = 32 * 1024; 
+            bytes = 32 * 1024;
             data = hdhomerun_device_stream_recv(mlcbi->hdhr, bytes, &bytes);
         }
     }
@@ -388,7 +388,7 @@ main(int argc, char** argv)
         printf("hdhome_run_avcodec_mpeg2_create failed error %d\n", error);
     }
 
-    hdhr = hdhomerun_device_create(HDHOMERUN_DEVICE_ID_WILDCARD, 0, 0, 0); 
+    hdhr = hdhomerun_device_create(HDHOMERUN_DEVICE_ID_WILDCARD, 0, 0, 0);
     if (hdhr != 0)
     {
         hdhr_vsck = hdhomerun_device_get_video_sock(hdhr);

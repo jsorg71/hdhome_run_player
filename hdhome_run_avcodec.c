@@ -83,12 +83,12 @@ hdhome_run_avcodec_ac3_create(void** obj)
     {
         return 1;
     }
-    self = (struct avcodec_ac3 *)malloc(sizeof(struct avcodec_ac3)); 
+    self = (struct avcodec_ac3 *)malloc(sizeof(struct avcodec_ac3));
     if (self == NULL)
     {
         return 2;
     }
-    memset(self, 0, sizeof(struct avcodec_ac3)); 
+    memset(self, 0, sizeof(struct avcodec_ac3));
     self->codec_context = avcodec_alloc_context3(NULL);
     if (self->codec_context == NULL)
     {
@@ -127,7 +127,7 @@ hdhome_run_avcodec_ac3_delete(void* obj)
     {
         return 0;
     }
-    avcodec_close(self->codec_context); 
+    avcodec_close(self->codec_context);
     AVCODEC_FREE_FRAME(&(self->frame));
     free(self);
     return 0;
@@ -237,12 +237,12 @@ hdhome_run_avcodec_mpeg2_create(void** obj)
     {
         return 1;
     }
-    self = (struct avcodec_mpeg2 *)malloc(sizeof(struct avcodec_mpeg2)); 
+    self = (struct avcodec_mpeg2 *)malloc(sizeof(struct avcodec_mpeg2));
     if (self == NULL)
     {
         return 2;
     }
-    memset(self, 0, sizeof(struct avcodec_mpeg2)); 
+    memset(self, 0, sizeof(struct avcodec_mpeg2));
     self->codec_context = avcodec_alloc_context3(NULL);
     if (self->codec_context == NULL)
     {
@@ -278,7 +278,7 @@ hdhome_run_avcodec_mpeg2_delete(void* obj)
     {
         return 0;
     }
-    avcodec_close(self->codec_context); 
+    avcodec_close(self->codec_context);
     AVCODEC_FREE_FRAME(&(self->frame));
     free(self);
     return 0;
