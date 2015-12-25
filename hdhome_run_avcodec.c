@@ -26,20 +26,25 @@
 #warning LIBAVCODEC_VERSION_MAJOR not defined
 #endif
 
+// LIBAVFORMAT_VERSION_MAJOR 53 debian 7
+// LIBAVCODEC_VERSION_MAJOR  54 ubuntu 14.04
+// LIBAVFORMAT_VERSION_MAJOR 56 debian 8
+
 #if LIBAVCODEC_VERSION_MAJOR > 55
 #include <libavresample/avresample.h>
 #define HD_DO_RESAMPLE 1
-#define CODEC_ID_AC3         AV_CODEC_ID_AC3
-#define CODEC_ID_MPEG2VIDEO  AV_CODEC_ID_MPEG2VIDEO
-#define AVCODEC_ALLOC_FRAME av_frame_alloc
+#else
+#endif
+
+#if LIBAVCODEC_VERSION_MAJOR > 53
+#define CODEC_ID_AC3                AV_CODEC_ID_AC3
+#define CODEC_ID_MPEG2VIDEO         AV_CODEC_ID_MPEG2VIDEO
+#define AVCODEC_ALLOC_FRAME         av_frame_alloc
 #define AVCODEC_FREE_FRAME(_frame)  av_frame_free(_frame);
 #else
 #define AVCODEC_ALLOC_FRAME         avcodec_alloc_frame
 #define AVCODEC_FREE_FRAME(_frame)  av_free(*(_frame));
 #endif
-
-//LIBAVCODEC_VERSION_MAJOR
-//LIBAVUTIL_VERSION_MAJOR
 
 struct avcodec_ac3
 {
