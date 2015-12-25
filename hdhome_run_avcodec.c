@@ -186,6 +186,7 @@ hdhome_run_avcodec_ac3_decode(void* obj, void* cdata, int cdata_bytes,
             return 0;
         }
     }
+    *cdata_bytes_processed = bytes_processed;
     return 0;
 }
 
@@ -321,6 +322,7 @@ hdhome_run_avcodec_mpeg2_decode(void* obj, void* cdata, int cdata_bytes,
             return 0;
         }
     }
+    *cdata_bytes_processed = bytes_processed;
     return 0;
 }
 
