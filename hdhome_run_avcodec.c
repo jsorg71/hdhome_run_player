@@ -21,6 +21,7 @@
 #include <string.h>
 
 #include <libavcodec/avcodec.h>
+#include <libavutil/mem.h>
 
 #ifndef LIBAVCODEC_VERSION_MAJOR
 #warning LIBAVCODEC_VERSION_MAJOR not defined
@@ -36,7 +37,7 @@
 #else
 #endif
 
-#if LIBAVCODEC_VERSION_MAJOR > 53
+#if LIBAVCODEC_VERSION_MAJOR > 55
 #define CODEC_ID_AC3                AV_CODEC_ID_AC3
 #define CODEC_ID_MPEG2VIDEO         AV_CODEC_ID_MPEG2VIDEO
 #define AVCODEC_ALLOC_FRAME         av_frame_alloc
