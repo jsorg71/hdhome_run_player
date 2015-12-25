@@ -209,7 +209,7 @@ hdhome_run_avcodec_ac3_get_frame_data(void* obj, void* data, int data_bytes)
     {
         memcpy(data, self->frame->data[0], data_bytes);
     }
-    else if (self->frame->format != AV_SAMPLE_FMT_FLTP)
+    else if (self->frame->format == AV_SAMPLE_FMT_FLTP)
     {
         /* convert float to sint16 */
         plane_stride = ((char*)(self->frame->data[1])) - ((char*)(self->frame->data[0]));
