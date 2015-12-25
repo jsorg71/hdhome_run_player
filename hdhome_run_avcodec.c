@@ -22,11 +22,33 @@
 
 #include <libavcodec/avcodec.h>
 
+#ifndef LIBAVCODEC_VERSION_MAJOR
+#warning LIBAVCODEC_VERSION_MAJOR not defined
+#endif
+
+#if LIBAVCODEC_VERSION_MAJOR > 55
+#include <libavresample/avresample.h>
+#define HD_DO_RESAMPLE 1
+#define CODEC_ID_AC3         AV_CODEC_ID_AC3
+#define CODEC_ID_MPEG2VIDEO  AV_CODEC_ID_MPEG2VIDEO
+#define AVCODEC_ALLOC_FRAME av_frame_alloc
+#define AVCODEC_FREE_FRAME(_frame)  av_frame_free(_frame);
+#else
+#define AVCODEC_ALLOC_FRAME         avcodec_alloc_frame
+#define AVCODEC_FREE_FRAME(_frame)  av_free(*(_frame));
+#endif
+
+//LIBAVCODEC_VERSION_MAJOR
+//LIBAVUTIL_VERSION_MAJOR
+
 struct avcodec_ac3
 {
     AVCodecContext* codec_context;
     AVCodec* codec;
     AVFrame* frame;
+#if HD_DO_RESAMPLE
+    AVAudioResampleContext* rs_ctx;
+#endif
 };
 
 struct avcodec_mpeg2
@@ -79,8 +101,10 @@ hdhome_run_avcodec_ac3_create(void** obj)
         free(self);
         return 5;
     }
-    self->frame = avcodec_alloc_frame();
-    //self->frame = av_frame_alloc();
+    self->frame = AVCODEC_ALLOC_FRAME();
+#if HD_DO_RESAMPLE
+    self->rs_ctx = avresample_alloc_context();
+#endif
     *obj = self;
     return 0;
 }
@@ -96,8 +120,7 @@ hdhome_run_avcodec_ac3_delete(void* obj)
         return 0;
     }
     avcodec_close(self->codec_context); 
-    //av_frame_free(&self->frame);
-    av_free(self->frame);
+    AVCODEC_FREE_FRAME(&(self->frame));
     free(self);
     return 0;
 }
@@ -110,6 +133,9 @@ hdhome_run_avcodec_ac3_decode(void* obj, void* cdata, int cdata_bytes,
     AVPacket pkt;
     int len;
     int bytes_processed;
+#if HD_DO_RESAMPLE
+    AVFrame* frame;
+#endif
 
     self = (struct avcodec_ac3*)obj;
     if (self == NULL)
@@ -136,6 +162,18 @@ hdhome_run_avcodec_ac3_decode(void* obj, void* cdata, int cdata_bytes,
         bytes_processed += len;
         if (*decoded)
         {
+#if HD_DO_RESAMPLE
+            if (self->frame->format != AV_SAMPLE_FMT_S16)
+            {
+                frame = av_frame_alloc();
+                frame->channel_layout = self->frame->channel_layout;
+                frame->sample_rate = self->frame->sample_rate;
+                frame->format = AV_SAMPLE_FMT_S16;
+                avresample_convert_frame(self->rs_ctx, frame, self->frame);
+                av_frame_free(&(self->frame));
+                self->frame = frame;
+            }
+#endif
             *cdata_bytes_processed = bytes_processed;
             return 0;
         }
@@ -216,8 +254,7 @@ hdhome_run_avcodec_mpeg2_create(void** obj)
         free(self);
         return 5;
     }
-    self->frame = avcodec_alloc_frame();
-    //self->frame = av_frame_alloc();
+    self->frame = AVCODEC_ALLOC_FRAME();
     *obj = self;
     return 0;
 }
@@ -233,8 +270,7 @@ hdhome_run_avcodec_mpeg2_delete(void* obj)
         return 0;
     }
     avcodec_close(self->codec_context); 
-    //av_frame_free(&self->frame);
-    av_free(self->frame);
+    AVCODEC_FREE_FRAME(&(self->frame));
     free(self);
     return 0;
 }
@@ -313,8 +349,7 @@ hdhome_run_avcodec_mpeg2_get_frame_data(void* obj, void* data, int data_bytes)
     {
         return 1;
     }
-    frame = avcodec_alloc_frame();
-    //frame = av_frame_alloc();
+    frame = AVCODEC_ALLOC_FRAME();
     avpicture_fill((AVPicture*)frame, data,
                    self->frame->format,
                    self->frame->width,
@@ -324,7 +359,7 @@ hdhome_run_avcodec_mpeg2_get_frame_data(void* obj, void* data, int data_bytes)
                     self->frame->format,
                     self->frame->width,
                     self->frame->height);
-    av_free(frame);
+    AVCODEC_FREE_FRAME(&frame);
     return 0;
 }
 
