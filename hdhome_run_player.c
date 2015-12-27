@@ -157,8 +157,8 @@ tmpegts_video_cb(const void* data, int data_bytes,
     {
         if (vi->frame_data_pos > 0)
         {
-            ps = (struct ptr_size*) calloc(sizeof(struct ptr_size), 1);
-            ps->ptr = (unsigned char*) malloc(vi->frame_data_pos);
+            ps = (struct ptr_size*)calloc(sizeof(struct ptr_size), 1);
+            ps->ptr = (unsigned char*)malloc(vi->frame_data_pos);
             memcpy(ps->ptr, vi->frame_data, vi->frame_data_pos);
             ps->bytes = vi->frame_data_pos;
             list_add_item(vi->frame_list, (long)ps);

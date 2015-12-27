@@ -147,7 +147,7 @@ hdhome_run_x11_show_buffer(int width, int height, int format,
         //dst_pixfmt = 0x30323449; /* I420 */
         //dst_pixfmt = 0x32595559; /* YUY2 */
         //dst_pixfmt = 0x59565955; /* UYVY */
-        case 0:
+        case 0: /* PIX_FMT_YUV420P / AV_PIX_FMT_YUV420P */
             dst_pixfmt = 0x30323449; /* I420 */
             break;
         default:

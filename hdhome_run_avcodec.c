@@ -32,6 +32,7 @@
 // LIBAVCODEC_VERSION_MAJOR 53 debian 7
 // LIBAVCODEC_VERSION_MAJOR 54 ubuntu 14.04
 // LIBAVCODEC_VERSION_MAJOR 56 debian 8
+// LIBAVCODEC_VERSION_MAJOR 56 ubuntu 15.10
 
 #if LIBAVCODEC_VERSION_MAJOR > 55
 #define CODEC_ID_AC3                AV_CODEC_ID_AC3
@@ -74,7 +75,7 @@ hdhome_run_avcodec_ac3_create(void** obj)
     {
         return 1;
     }
-    self = (struct avcodec_ac3 *)malloc(sizeof(struct avcodec_ac3));
+    self = (struct avcodec_ac3*)malloc(sizeof(struct avcodec_ac3));
     if (self == NULL)
     {
         return 2;
@@ -257,7 +258,7 @@ hdhome_run_avcodec_mpeg2_create(void** obj)
     {
         return 1;
     }
-    self = (struct avcodec_mpeg2 *)malloc(sizeof(struct avcodec_mpeg2));
+    self = (struct avcodec_mpeg2*)malloc(sizeof(struct avcodec_mpeg2));
     if (self == NULL)
     {
         return 2;
