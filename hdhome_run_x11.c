@@ -138,8 +138,13 @@ hdhome_run_x11_show_buffer(int width, int height, int format,
                            void* buffer)
 {
     int dst_pixfmt;
+    int x;
+    int y;
+    int swidth;
+    int sheight;
     XShmSegmentInfo shminfo;
     XvImage * image;
+    float ratio;
 
     //printf("hdhome_run_x11_show_buffer:\n");
     switch (format)
@@ -164,8 +169,30 @@ hdhome_run_x11_show_buffer(int width, int height, int format,
         XFree(image);
         return 1;
     }
+    ratio = ((float)width) / ((float)height);
+    sheight = g_sheight;
+    swidth = sheight * ratio;
+    if (swidth > g_swidth)
+    {
+        swidth = g_swidth;
+        sheight = g_swidth / ratio;
+    }
+    x = 0;
+    if (swidth < g_swidth)
+    {
+        x = (g_swidth - swidth) / 2;
+        XFillRectangle(g_disp, g_win, g_gc, 0, 0, x, g_sheight);
+        XFillRectangle(g_disp, g_win, g_gc, x + swidth, 0, x, g_sheight);
+    }
+    y = 0;
+    if (sheight < g_sheight)
+    {
+        y = (g_sheight - sheight) / 2;
+        XFillRectangle(g_disp, g_win, g_gc, 0, 0, g_swidth, y);
+        XFillRectangle(g_disp, g_win, g_gc, 0, y + sheight, g_swidth, y);
+    }
     XvShmPutImage(g_disp, g_xv_port, g_win, g_gc, image, 0, 0,
-                  width, height, 0, 0, g_swidth, g_sheight, 0);
+                  width, height, x, y, swidth, sheight, 0);
     XSync(g_disp, 0);
     XShmDetach(g_disp, &shminfo);
     XFree(image);
