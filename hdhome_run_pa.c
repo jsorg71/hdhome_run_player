@@ -195,8 +195,11 @@ hdhome_run_pa_start(void* handle, const char* name, int ms_latency, int format)
     pa_buffer_attr buffer_attr;
     pa_buffer_attr* pbuffer_attr;
     pa_stream_state_t state;
+    pa_channel_map channel_map;
+    pa_channel_map* channel_map_p;
 
     self = (struct hdhomerun_pa*)handle;
+    channel_map_p = 0;
     memset(&sample_spec, 0, sizeof(sample_spec));
     switch (format)
     {
@@ -209,6 +212,15 @@ hdhome_run_pa_start(void* handle, const char* name, int ms_latency, int format)
             sample_spec.rate = 48000;
             sample_spec.channels = 6;
             sample_spec.format = PA_SAMPLE_S16LE;
+            memset(&channel_map, 0, sizeof(channel_map));
+            channel_map_p = &channel_map;
+            channel_map.channels = 6;
+            channel_map.map[0] = PA_CHANNEL_POSITION_FRONT_LEFT;
+            channel_map.map[1] = PA_CHANNEL_POSITION_FRONT_RIGHT;
+            channel_map.map[2] = PA_CHANNEL_POSITION_FRONT_CENTER;
+            channel_map.map[3] = PA_CHANNEL_POSITION_LFE;
+            channel_map.map[4] = PA_CHANNEL_POSITION_REAR_LEFT;
+            channel_map.map[5] = PA_CHANNEL_POSITION_REAR_RIGHT;
             break;
         default:
             return 1;
@@ -218,7 +230,8 @@ hdhome_run_pa_start(void* handle, const char* name, int ms_latency, int format)
         return 2;
     }
     pa_threaded_mainloop_lock(self->pa_mainloop);
-    self->pa_stream = pa_stream_new(self->pa_context, name, &sample_spec, 0);
+    self->pa_stream = pa_stream_new(self->pa_context, name, &sample_spec,
+                                    channel_map_p);
     if (self->pa_stream == 0)
     {
         return 3;
