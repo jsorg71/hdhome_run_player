@@ -34,6 +34,24 @@
 // LIBAVCODEC_VERSION_MAJOR 56 debian 8
 // LIBAVCODEC_VERSION_MAJOR 56 ubuntu 15.10
 
+//example
+//#if (LIBAVCODEC_VERSION_INT <= ((51<<16) + (28<<8) + 0))
+//              len = avcodec_decode_audio(cc, (int16_t *)output->buffer, &frame_size,
+//                              input->curr_pkt_buf, input->curr_pkt_size);
+//#else
+//               /* The change to avcodec_decode_audio3 occurred between
+//                * 52.25.0 and 52.26.0 */
+//#elif (LIBAVCODEC_VERSION_INT <= ((52<<16) + (25<<8) + 0))
+//              len = avcodec_decode_audio2(cc, (int16_t *) output->buffer, &frame_size,
+//                              input->curr_pkt_buf, input->curr_pkt_size);
+//#else
+//               AVPacket avpkt;
+//               av_init_packet(&avpkt);
+//               avpkt.data = input->curr_pkt_buf;
+//               avpkt.size = input->curr_pkt_size;
+//               len = avcodec_decode_audio3(cc, (int16_t *) output->buffer, &frame_size, &avpkt);
+//               av_free_packet(&avpkt);
+
 #if LIBAVCODEC_VERSION_MAJOR > 55
 #define CODEC_ID_AC3                AV_CODEC_ID_AC3
 #define CODEC_ID_MPEG2VIDEO         AV_CODEC_ID_MPEG2VIDEO
@@ -181,7 +199,7 @@ hdhome_run_avcodec_ac3_get_frame_info(void* obj, int* channels, int* format,
     {
         return 2;
     }
-    frame_size = av_samples_get_buffer_size(NULL, 
+    frame_size = av_samples_get_buffer_size(NULL,
                                             self->codec_context->channels,
                                             self->frame->nb_samples,
                                             AV_SAMPLE_FMT_S16,
@@ -227,7 +245,7 @@ hdhome_run_avcodec_ac3_get_frame_data(void* obj, void* data, int data_bytes)
             {
                 break;
             }
-            dst[0] = src[0][index] * 32768; 
+            dst[0] = src[0][index] * 32768;
             dst[1] = src[1][index] * 32768;
             dst[2] = src[2][index] * 32768;
             dst[3] = src[3][index] * 32768;
