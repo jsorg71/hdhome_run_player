@@ -37,7 +37,6 @@ static int g_screenNumber = 0;
 static Window g_win = 0;
 static long g_eventMask = 0;
 static int g_disp_fd = 0;
-static int g_visible = 0;
 static GC g_gc;
 
 static int g_swidth = 0;
@@ -64,6 +63,7 @@ hdhome_run_x11_init(void)
     unsigned int request_base;
     unsigned int num_adaptors;
     XvAdaptorInfo* ai;
+    XEvent evt;
 
     printf("hdhomerun_x11_init:\n");
     g_disp = XOpenDisplay(NULL);
@@ -81,8 +81,8 @@ hdhome_run_x11_init(void)
     g_eventMask = StructureNotifyMask | MapNotify | VisibilityChangeMask |
                   ButtonPressMask | ButtonReleaseMask | KeyPressMask;
     XSelectInput(g_disp, g_win, g_eventMask);
+    XMaskEvent(g_disp, VisibilityNotify, &evt);
     g_disp_fd = ConnectionNumber(g_disp);
-
     ret = XvQueryExtension(g_disp, &version, &release, &request_base, &event_base, &error_base);
     if (ret != Success)
     {
@@ -202,7 +202,7 @@ hdhome_run_x11_show_buffer(int width, int height, int format,
 
 /*****************************************************************************/
 int
-hdhome_run_x11_main_loop(int sck, tmlcb cb, void* udata)
+hdhome_run_x11_main_loop(int* sck, tmlcb* cb, int count, void* udata)
 {
     XEvent evt;
     fd_set rfds_set;
@@ -210,6 +210,7 @@ hdhome_run_x11_main_loop(int sck, tmlcb cb, void* udata)
     int status;
     int error;
     int cont;
+    int index;
 
     printf("hdhome_run_x11_main_loop:\n");
     error = 0;
@@ -218,47 +219,45 @@ hdhome_run_x11_main_loop(int sck, tmlcb cb, void* udata)
     {
         max_fd = 0;
         FD_ZERO(&rfds_set);
-        //printf("--%d\n", g_disp_fd);
         FD_SET(g_disp_fd, &rfds_set);
         if (g_disp_fd > max_fd)
         {
             max_fd = g_disp_fd;
         }
-        if (g_visible)
+        for (index = 0; index < count; index++)
         {
-            FD_SET(sck, &rfds_set);
-            if (sck > max_fd)
+            FD_SET(sck[index], &rfds_set);
+            if (sck[index] > max_fd)
             {
-                max_fd = sck;
+                max_fd = sck[index];
             }
         }
         status = select(max_fd + 1, &rfds_set, NULL, NULL, NULL);
         if (status > 0)
         {
-            if (g_visible)
+            for (index = 0; index < count; index++)
             {
-                if (FD_ISSET(sck, &rfds_set))
+                if (FD_ISSET(sck[index], &rfds_set))
                 {
-                    error = cb(sck, udata);
+                    error = (cb[index])(sck[index], udata);
+                    if (error != 0)
+                    {
+                        printf("hdhome_run_x11_main_loop: cb failed\n");
+                    }
                 }
             }
             while (XPending(g_disp) > 0)
             {
-                memset(&evt, 0, sizeof(evt));
                 XNextEvent(g_disp, &evt);
                 switch (evt.type)
                 {
                     case VisibilityNotify:
-                        g_visible = 1;
                         break;
                     case KeyPress:
-                        //cont = 0;
                         break;
                     case ButtonRelease:
                         break;
                     case ConfigureNotify:
-                        //printf("ConfigureNotify: width %d height %d\n",
-                        //       evt.xconfigure.width, evt.xconfigure.height);
                         g_swidth = evt.xconfigure.width;
                         g_sheight = evt.xconfigure.height;
                         break;
