@@ -167,6 +167,7 @@ hdhome_run_avcodec_ac3_decode(void* obj, void* cdata, int cdata_bytes,
                                     decoded, &pkt);
         if (len < 0)
         {
+            av_free_packet(&pkt);
             return 1;
         }
         pkt.size -= len;
@@ -175,10 +176,12 @@ hdhome_run_avcodec_ac3_decode(void* obj, void* cdata, int cdata_bytes,
         if (*decoded)
         {
             *cdata_bytes_processed = bytes_processed;
+            av_free_packet(&pkt);
             return 0;
         }
     }
     *cdata_bytes_processed = bytes_processed;
+    av_free_packet(&pkt);
     return 0;
 }
 
@@ -350,6 +353,7 @@ hdhome_run_avcodec_mpeg2_decode(void* obj, void* cdata, int cdata_bytes,
                                     decoded, &pkt);
         if (len < 0)
         {
+            av_free_packet(&pkt);
             return 1;
         }
         pkt.size -= len;
@@ -358,10 +362,12 @@ hdhome_run_avcodec_mpeg2_decode(void* obj, void* cdata, int cdata_bytes,
         if (*decoded)
         {
             *cdata_bytes_processed = bytes_processed;
+            av_free_packet(&pkt);
             return 0;
         }
     }
     *cdata_bytes_processed = bytes_processed;
+    av_free_packet(&pkt);
     return 0;
 }
 

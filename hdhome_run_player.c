@@ -107,6 +107,12 @@ static struct list* g_main_to_worker_video_list;
 static struct list* g_worker_to_main_video_list;
 static struct list* g_main_to_worker_audio_list;
 
+static int g_time_flags = 0;
+static int g_time_point = 0;
+static int g_time_count = 0;
+static int g_fps = 30;
+static int g_last_mstime = 0;
+
 /*****************************************************************************/
 /* returns boolean */
 static int
@@ -118,7 +124,7 @@ pipe_is_set(int pipe[])
 
     memset(&time, 0, sizeof(time));
     FD_ZERO(&rfds);
-    FD_SET(((unsigned int)pipe[0]), &rfds);
+    FD_SET(pipe[0], &rfds);
     rv = select(pipe[0] + 1, &rfds, 0, 0, &time);
     if (rv == 1)
     {
@@ -163,10 +169,12 @@ static struct main_to_worker_video_item*
 get_main_to_worker_video_item(void)
 {
     struct main_to_worker_video_item* mtwvi;
+    int list_count;
 
     mtwvi = NULL;
     pthread_mutex_lock(&g_mutex);
-    if (g_main_to_worker_video_list->count > 0)
+    list_count = g_fps > 45 ? 59 : 29;
+    if (g_main_to_worker_video_list->count > list_count)
     {
         mtwvi = (struct main_to_worker_video_item*)
                 list_get_item(g_main_to_worker_video_list, 0);
@@ -254,6 +262,8 @@ decode_video_and_send_back(struct video_info* vi,
     int out_data_bytes;
     int cdata_bytes_processed;
     int decoded;
+    int sleep_mstime;
+    int now;
     unsigned char* out_data;
     struct worker_to_main_video_item* wtmvi;
 
@@ -291,6 +301,28 @@ decode_video_and_send_back(struct video_info* vi,
                     wtmvi->format = format;
                     wtmvi->width = width;
                     wtmvi->height = height;
+                    now = get_mstime();
+                    if (g_fps > 45)
+                    {
+                        sleep_mstime = 16 - (now - g_last_mstime);
+                        if (sleep_mstime > 15)
+                        {
+                            sleep_mstime = 15;
+                        }
+                    }
+                    else
+                    {
+                        sleep_mstime = 32 - (now - g_last_mstime);
+                        if (sleep_mstime > 30)
+                        {
+                            sleep_mstime = 30;
+                        }
+                    }
+                    if (sleep_mstime > 0)
+                    {
+                        usleep(sleep_mstime * 1000); 
+                    }
+                    g_last_mstime = now;
                     add_worker_to_main_video_item(wtmvi);
                     pipe_set(g_worker_to_main_video_pipe);
                 }
@@ -513,6 +545,31 @@ tmpegts_video_cb(const void* data, int data_bytes,
     {
         if (vi->frame_data_pos > 0)
         {
+            int now = get_mstime();
+            if (g_time_flags == 0)
+            {
+                g_time_flags = 1;
+                g_time_point = get_mstime();
+                g_time_count = 0;
+            }
+            else
+            {
+                g_time_count++;
+                if (now - g_time_point > 4000)
+                {
+                    g_fps = (g_time_count + 2) / 4;
+                    if (g_fps < 45)
+                    {
+                        g_fps = 30;
+                    }
+                    else
+                    {
+                        g_fps = 60;
+                    }
+                    g_time_point = now;
+                    g_time_count = 0;
+                }
+            }
             /* https://en.wikipedia.org/wiki/Packetized_elementary_stream */
             remainder = (unsigned char)(vi->frame_data[8]);
             cdata = (unsigned char*)(vi->frame_data + (9 + remainder));
@@ -620,7 +677,7 @@ hdhome_run_callback(int sck, void* udata)
     error = 0;
     bytes = 32 * 1024;
     data = hdhomerun_device_stream_recv(mlcbi->hdhr, bytes, &bytes);
-    while ((data != 0) && (error == 0))
+    while ((data != NULL) && (error == 0))
     {
         while ((error == 0) && (bytes > 3))
         {
@@ -761,7 +818,7 @@ main(int argc, char** argv)
     g_main_to_worker_audio_list = list_create();
 
     hdhr = hdhomerun_device_create(HDHOMERUN_DEVICE_ID_WILDCARD, 0, 0, 0);
-    if (hdhr != 0)
+    if (hdhr != NULL)
     {
         hdhr_vsck = hdhomerun_device_get_video_sock(hdhr);
         hdhr_sck = hdhomerun_video_get_sock(hdhr_vsck);

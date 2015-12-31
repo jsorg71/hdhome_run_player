@@ -52,6 +52,7 @@ struct tmpegts
     int adaptation_field_extension_flag;
 
     unsigned char pcr[6];
+    //long long pcr_time;
 
 };
 
