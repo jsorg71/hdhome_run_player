@@ -79,7 +79,7 @@ struct main_to_worker_video_item
 {
     unsigned char* data;
     int data_bytes;
-    int pad0;
+    int mstime;
 };
 
 struct worker_to_main_video_item
@@ -110,7 +110,7 @@ static struct list* g_main_to_worker_audio_list;
 static int g_time_flags = 0;
 static int g_time_point = 0;
 static int g_time_count = 0;
-static int g_fps = 30;
+static int g_fps = 0;
 static int g_last_mstime = 0;
 
 /*****************************************************************************/
@@ -166,19 +166,24 @@ pipe_set(int pipe[])
 
 /*****************************************************************************/
 static struct main_to_worker_video_item*
-get_main_to_worker_video_item(void)
+get_main_to_worker_video_item(int mstime, int* wait_mstime)
 {
     struct main_to_worker_video_item* mtwvi;
-    int list_count;
 
+    //printf("count %d\n", g_main_to_worker_video_list->count);
     mtwvi = NULL;
     pthread_mutex_lock(&g_mutex);
-    list_count = g_fps > 45 ? 59 : 29;
-    if (g_main_to_worker_video_list->count > list_count)
+    if (g_main_to_worker_video_list->count > 0)
     {
         mtwvi = (struct main_to_worker_video_item*)
                 list_get_item(g_main_to_worker_video_list, 0);
-        list_remove_item(g_main_to_worker_video_list, 0);
+        if (mtwvi->mstime > mstime)
+        {
+            *wait_mstime = mtwvi->mstime - mstime;
+            pthread_mutex_unlock(&g_mutex);
+            return NULL;
+        }
+        list_remove_item(g_main_to_worker_video_list, 0); 
     }
     pthread_mutex_unlock(&g_mutex);
     return mtwvi;
@@ -262,8 +267,6 @@ decode_video_and_send_back(struct video_info* vi,
     int out_data_bytes;
     int cdata_bytes_processed;
     int decoded;
-    int sleep_mstime;
-    int now;
     unsigned char* out_data;
     struct worker_to_main_video_item* wtmvi;
 
@@ -301,28 +304,6 @@ decode_video_and_send_back(struct video_info* vi,
                     wtmvi->format = format;
                     wtmvi->width = width;
                     wtmvi->height = height;
-                    now = get_mstime();
-                    if (g_fps > 45)
-                    {
-                        sleep_mstime = 16 - (now - g_last_mstime);
-                        if (sleep_mstime > 15)
-                        {
-                            sleep_mstime = 15;
-                        }
-                    }
-                    else
-                    {
-                        sleep_mstime = 32 - (now - g_last_mstime);
-                        if (sleep_mstime > 30)
-                        {
-                            sleep_mstime = 30;
-                        }
-                    }
-                    if (sleep_mstime > 0)
-                    {
-                        usleep(sleep_mstime * 1000); 
-                    }
-                    g_last_mstime = now;
                     add_worker_to_main_video_item(wtmvi);
                     pipe_set(g_worker_to_main_video_pipe);
                 }
@@ -358,11 +339,15 @@ video_thread_proc(void* arg)
     fd_set rfds_set;
     int max_fd;
     int status;
+    int now;
+    int wait_mstime;
     struct main_to_worker_video_item* mtwvi;
     struct mlcb_info* mlcbi;
+    struct timeval time;
 
     printf("video_thread_proc:\n");
     mlcbi = (struct mlcb_info*)arg;
+    wait_mstime = 1000;
     cont = 1;
     while (cont)
     {
@@ -378,7 +363,9 @@ video_thread_proc(void* arg)
         {
             max_fd = g_main_to_worker_video_pipe[0];
         }
-        status = select(max_fd + 1, &rfds_set, NULL, NULL, NULL);
+        time.tv_sec = wait_mstime / 1000;
+        time.tv_usec = (wait_mstime * 1000) % 1000000;
+        status = select(max_fd + 1, &rfds_set, NULL, NULL, &time);
         if (status > 0)
         {
             if (FD_ISSET(g_term_pipe[0], &rfds_set))
@@ -389,12 +376,16 @@ video_thread_proc(void* arg)
             if (FD_ISSET(g_main_to_worker_video_pipe[0], &rfds_set))
             {
                 pipe_clear(g_main_to_worker_video_pipe);
-                mtwvi = get_main_to_worker_video_item();
-                while (mtwvi != NULL)
-                {
-                    video_process_item(mlcbi, mtwvi);
-                    mtwvi = get_main_to_worker_video_item();
-                }
+            }
+            now = get_mstime();
+            wait_mstime = 1000;
+            mtwvi = get_main_to_worker_video_item(now, &wait_mstime);
+            while (mtwvi != NULL)
+            {
+                video_process_item(mlcbi, mtwvi);
+                now = get_mstime();
+                wait_mstime = 1000;
+                mtwvi = get_main_to_worker_video_item(now, &wait_mstime);
             }
         }
     }
@@ -537,6 +528,7 @@ tmpegts_video_cb(const void* data, int data_bytes,
     struct video_info* vi;
     unsigned char* cdata;
     int cdata_bytes;
+    int now;
     struct main_to_worker_video_item* mtwvi;
 
     rv = 0;
@@ -545,11 +537,11 @@ tmpegts_video_cb(const void* data, int data_bytes,
     {
         if (vi->frame_data_pos > 0)
         {
-            int now = get_mstime();
+            now = get_mstime();
             if (g_time_flags == 0)
             {
                 g_time_flags = 1;
-                g_time_point = get_mstime();
+                g_time_point = now;
                 g_time_count = 0;
             }
             else
@@ -579,6 +571,36 @@ tmpegts_video_cb(const void* data, int data_bytes,
             mtwvi->data = (unsigned char*)malloc(cdata_bytes);
             memcpy(mtwvi->data, cdata, cdata_bytes);
             mtwvi->data_bytes = cdata_bytes;
+
+            if (g_last_mstime == 0)
+            {
+                g_last_mstime = now + HD_AUDIO_MSDELAY;
+            }
+            mtwvi->mstime = now + HD_AUDIO_MSDELAY;
+            if (g_fps == 60)
+            {
+                if (mtwvi->mstime - g_last_mstime < 16)
+                {
+                    mtwvi->mstime = g_last_mstime + 16;
+                }
+                if (mtwvi->mstime - g_last_mstime > 18)
+                {
+                    mtwvi->mstime = g_last_mstime + 18;
+                }
+            }
+            else if (g_fps == 30)
+            {
+                if (mtwvi->mstime - g_last_mstime < 32)
+                {
+                    mtwvi->mstime = g_last_mstime + 32;
+                }
+                if (mtwvi->mstime - g_last_mstime > 34)
+                {
+                    mtwvi->mstime = g_last_mstime + 34;
+                }
+            }
+            g_last_mstime = mtwvi->mstime;
+
             add_main_to_worker_video_item(mtwvi);
             pipe_set(g_main_to_worker_video_pipe);
             vi->frame_data_pos = 0;
