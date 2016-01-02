@@ -139,22 +139,17 @@ int process_mpeg_ts_packet(const void* data, int bytes, const struct tmpegts_cb*
         }
         if (mpegts.splicing_point_flag)
         {
-            printf("splicing_point_flag set\n");
+            //printf("splicing_point_flag set\n");
             //return 1;
         }
         if (mpegts.transport_private_data_flag)
         {
-            printf("transport_private_data_flag set\n");
-            //return 1;
-        }
-        if (mpegts.transport_private_data_flag)
-        {
-            printf("transport_private_data_flag set\n");
+            //printf("transport_private_data_flag set\n");
             //return 1;
         }
         if (mpegts.adaptation_field_extension_flag)
         {
-            printf("adaptation_field_extension_flag set\n");
+            //printf("adaptation_field_extension_flag set\n");
             //return 1;
         }
     }
