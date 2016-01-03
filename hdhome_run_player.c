@@ -220,7 +220,14 @@ audio_delay_list_get_average(struct list* alist, int now, int diff)
         item = (struct average_item*)list_get_item(alist, index);
         acc += item->diff;
     }
-    average = (acc + (count / 2)) / count;
+    if (count > 0)
+    {
+        average = (acc + (count / 2)) / count;
+    }
+    else
+    {
+        average = acc;
+    }
     LLOGLN(10, ("audio_delay_list_get_average: count %d average %d",
            count, average));
     return average;
@@ -247,7 +254,7 @@ get_main_to_worker_video_item(struct video_audio_info* vai,
             pthread_mutex_unlock(&(vai->mutex));
             return NULL;
         }
-        list_remove_item(vai->main_to_worker_video_list, 0); 
+        list_remove_item(vai->main_to_worker_video_list, 0);
     }
     pthread_mutex_unlock(&(vai->mutex));
     return mtwvi;
@@ -525,14 +532,17 @@ decode_and_present_audio(struct video_audio_info* vai,
                                                 CAP_PA_FORMAT_48000_6CH_16LE);
                         }
                     }
-                    hdhome_run_pa_play(ai->pa_handle,
-                                       out_data, out_data_bytes);
-                    now = get_mstime();
-                    mtwai->mstime_queued = now;
-                    diff = mtwai->mstime_queued - mtwai->mstime_in;
-                    vai->audio_latency =
-                        audio_delay_list_get_average(ai->audio_delay_list,
-                                                     now, diff);
+                    if (ai->pa_handle != NULL)
+                    {
+                        hdhome_run_pa_play(ai->pa_handle,
+                                           out_data, out_data_bytes);
+                        now = get_mstime();
+                        mtwai->mstime_queued = now;
+                        diff = mtwai->mstime_queued - mtwai->mstime_in;
+                        vai->audio_latency =
+                            audio_delay_list_get_average(ai->audio_delay_list,
+                                                         now, diff);
+                    }
                 }
                 free(out_data);
             }
