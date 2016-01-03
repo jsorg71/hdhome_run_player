@@ -31,6 +31,19 @@
 #include "hdhome_run_avcodec.h"
 
 #define HD_AUDIO_MSDELAY 1000
+#define MSTIME_HISTORY 4000
+
+#define LLOG_LEVEL 1
+#define LLOGLN(_level, _args) \
+  do \
+  { \
+    if (_level < LLOG_LEVEL) \
+    { \
+        printf _args ; \
+        printf("\n"); \
+    } \
+  } \
+  while (0)
 
 struct video_info
 {
@@ -68,12 +81,15 @@ struct audio_info
     int pad1;
     void* ac3_handle;
     void* pa_handle;
+    struct list* audio_delay_list;
 };
 
 struct video_audio_info
 {
     struct video_info* vi;
     struct audio_info* ai;
+    int audio_latency;
+    int pad0;
 };
 
 struct mlcb_info
@@ -108,6 +124,12 @@ struct main_to_worker_audio_item
     int pad0;
 };
 
+struct average_item
+{
+    int diff;
+    int mstime;
+};
+
 static int g_main_to_worker_video_pipe[2];
 static int g_worker_to_main_video_pipe[2];
 static int g_main_to_worker_audio_pipe[2];
@@ -116,9 +138,6 @@ static pthread_mutex_t g_mutex;
 static struct list* g_main_to_worker_video_list;
 static struct list* g_worker_to_main_video_list;
 static struct list* g_main_to_worker_audio_list;
-static struct list* g_audio_delay_list;
-
-static int g_audio_latency = 0;
 
 /*****************************************************************************/
 /* returns boolean */
@@ -173,24 +192,40 @@ pipe_set(int pipe[])
 
 /*****************************************************************************/
 static int
-audio_delay_list_get_average(int mstime)
+audio_delay_list_get_average(struct list* alist, int now, int diff)
 {
     int index;
     int count;
     int acc;
+    int average;
+    struct average_item* item;
 
-    list_add_item(g_audio_delay_list, mstime);
-    if (g_audio_delay_list->count > 128)
+    item = (struct average_item*)calloc(sizeof(struct average_item), 1);
+    item->diff = diff;
+    item->mstime = now;
+    list_add_item(alist, (long)item);
+    item = (struct average_item*)list_get_item(alist, 0);
+    while (item != 0)
     {
-        list_remove_item(g_audio_delay_list, 0);
+        if (item->mstime > now - MSTIME_HISTORY)
+        {
+            break;
+        }
+        free(item);
+        list_remove_item(alist, 0);
+        item = (struct average_item*)list_get_item(alist, 0);
     }
     acc = 0;
-    count = g_audio_delay_list->count;
+    count = alist->count;
     for (index = 0; index < count; index++)
     {
-        acc += list_get_item(g_audio_delay_list, index);
+        item = (struct average_item*)list_get_item(alist, index);
+        acc += item->diff;
     }
-    return (acc + (count / 2)) / count;
+    average = (acc + (count / 2)) / count;
+    LLOGLN(10, ("audio_delay_list_get_average: count %d average %d",
+           count, average));
+    return average;
 }
 
 /*****************************************************************************/
@@ -199,7 +234,8 @@ get_main_to_worker_video_item(int mstime, int* wait_mstime)
 {
     struct main_to_worker_video_item* mtwvi;
 
-    //printf("count %d\n", g_main_to_worker_video_list->count);
+    LLOGLN(10, ("get_main_to_worker_video_item: count %d",
+           g_main_to_worker_video_list->count));
     mtwvi = NULL;
     pthread_mutex_lock(&g_mutex);
     if (g_main_to_worker_video_list->count > 0)
@@ -286,7 +322,7 @@ add_main_to_worker_audio_item(struct main_to_worker_audio_item* mtwai)
 
 /*****************************************************************************/
 static int
-decode_video_and_send_back(struct video_info* vi,
+decode_video_and_send_back(struct video_audio_info* vai,
                            struct main_to_worker_video_item* mtwvi)
 {
     int error;
@@ -300,9 +336,11 @@ decode_video_and_send_back(struct video_info* vi,
     struct worker_to_main_video_item* wtmvi;
     unsigned char* cdata;
     int cdata_bytes;
+    struct video_info* vi;
 
     cdata = mtwvi->data;
     cdata_bytes = mtwvi->data_bytes;
+    vi = vai->vi;
     while (cdata_bytes > 0)
     {
         error = hdhome_run_avcodec_mpeg2_decode(vi->mpeg2_handle,
@@ -311,7 +349,8 @@ decode_video_and_send_back(struct video_info* vi,
                                                 &decoded);
         if (error != 0)
         {
-            printf("decode_video_and_send_back: error decoding %d\n", error);
+            LLOGLN(0, ("decode_video_and_send_back: error decoding %d",
+                   error));
             break;
         }
         cdata += cdata_bytes_processed;
@@ -355,10 +394,10 @@ static int
 video_process_item(struct mlcb_info* mlcbi,
                    struct main_to_worker_video_item* mtwvi)
 {
-    struct video_info* vi;
+    struct video_audio_info* vai;
 
-    vi = mlcbi->vai->vi;
-    decode_video_and_send_back(vi, mtwvi);
+    vai = mlcbi->vai;
+    decode_video_and_send_back(vai, mtwvi);
     free(mtwvi->data);
     free(mtwvi);
     return 0;
@@ -378,7 +417,7 @@ video_thread_proc(void* arg)
     struct mlcb_info* mlcbi;
     struct timeval time;
 
-    printf("video_thread_proc:\n");
+    LLOGLN(0, ("video_thread_proc:"));
     mlcbi = (struct mlcb_info*)arg;
     wait_mstime = 1000;
     cont = 1;
@@ -427,7 +466,7 @@ video_thread_proc(void* arg)
 
 /*****************************************************************************/
 static int
-decode_and_present_audio(struct audio_info* ai,
+decode_and_present_audio(struct video_audio_info* vai,
                          struct main_to_worker_audio_item* mtwai)
 {
     int cdata_bytes_processed;
@@ -437,12 +476,15 @@ decode_and_present_audio(struct audio_info* ai,
     int format;
     int out_data_bytes;
     int diff;
+    int now;
     void* out_data;
     unsigned char* cdata;
     int cdata_bytes;
+    struct audio_info* ai;
 
     cdata = mtwai->data;
     cdata_bytes = mtwai->data_bytes;
+    ai = vai->ai;
     while (cdata_bytes > 0)
     {
         error = hdhome_run_avcodec_ac3_decode(ai->ac3_handle,
@@ -451,7 +493,7 @@ decode_and_present_audio(struct audio_info* ai,
                                               &decoded);
         if (error != 0)
         {
-            printf("decode_and_present_audio: error decoding %d\n", error);
+            LLOGLN(0, ("decode_and_present_audio: error decoding %d", error));
             break;
         }
         cdata += cdata_bytes_processed;
@@ -483,16 +525,12 @@ decode_and_present_audio(struct audio_info* ai,
                     }
                     hdhome_run_pa_play(ai->pa_handle,
                                        out_data, out_data_bytes);
-                    //hdhome_run_pa_play_non_blocking(ai->pa_handle,
-                    //                                out_data,
-                    //                                out_data_bytes,
-                    //                                NULL);
-                    mtwai->mstime_queued = get_mstime();
+                    now = get_mstime();
+                    mtwai->mstime_queued = now;
                     diff = mtwai->mstime_queued - mtwai->mstime_in;
-                    g_audio_latency = audio_delay_list_get_average(diff);
-                    //printf("g_audio_latency %d\n", g_audio_latency);
-                    //printf("diff %d\n", diff);
-
+                    vai->audio_latency =
+                        audio_delay_list_get_average(ai->audio_delay_list,
+                                                     now, diff);
                 }
                 free(out_data);
             }
@@ -506,10 +544,10 @@ static int
 audio_process_item(struct mlcb_info* mlcbi,
                    struct main_to_worker_audio_item* mtwai)
 {
-    struct audio_info* ai;
+    struct video_audio_info* vai;
 
-    ai = mlcbi->vai->ai;
-    decode_and_present_audio(ai, mtwai);
+    vai = mlcbi->vai;
+    decode_and_present_audio(vai, mtwai);
     free(mtwai->data);
     free(mtwai);
     return 0;
@@ -526,7 +564,7 @@ audio_thread_proc(void* arg)
     struct main_to_worker_audio_item* mtwai;
     struct mlcb_info* mlcbi;
 
-    printf("audio_thread_proc:\n");
+    LLOGLN(0, ("audio_thread_proc:"));
     mlcbi = (struct mlcb_info*)arg;
     cont = 1;
     while (cont)
@@ -573,6 +611,7 @@ tmpegts_video_cb(const void* data, int data_bytes,
 {
     int rv;
     int remainder;
+    struct video_audio_info* vai;
     struct video_info* vi;
     unsigned char* cdata;
     int cdata_bytes;
@@ -581,7 +620,8 @@ tmpegts_video_cb(const void* data, int data_bytes,
     struct main_to_worker_video_item* mtwvi;
 
     rv = 0;
-    vi = ((struct video_audio_info*)udata)->vi;
+    vai = (struct video_audio_info*)udata;
+    vi = vai->vi;
     if (mpegts->payload_unit_start_indicator)
     {
         if (vi->frame_data_pos > 0)
@@ -596,13 +636,14 @@ tmpegts_video_cb(const void* data, int data_bytes,
             else
             {
                 vi->time_count++;
-                if (now - vi->time_point > 4000)
+                if (now - vi->time_point > MSTIME_HISTORY)
                 {
                     vi->fps = (vi->time_count + 2) / 4;
                     vi->frame_lo = (1000 / vi->fps) - 2;
                     vi->frame_hi = (1000 / vi->fps) + 2;
-                    //printf("fps %d frame_lo %d frame_hi %d\n",
-                    //       vi->fps, vi->frame_lo, vi->frame_hi);
+                    LLOGLN(10, ("tmpegts_video_cb: fps %d frame_lo %d "
+                           "frame_hi %d",
+                           vi->fps, vi->frame_lo, vi->frame_hi));
                     vi->time_point = now;
                     vi->time_count = 0;
                 }
@@ -616,7 +657,7 @@ tmpegts_video_cb(const void* data, int data_bytes,
             mtwvi->data = (unsigned char*)malloc(cdata_bytes);
             memcpy(mtwvi->data, cdata, cdata_bytes);
             mtwvi->data_bytes = cdata_bytes;
-            mtwvi->mstime = now + g_audio_latency + HD_AUDIO_MSDELAY;
+            mtwvi->mstime = now + vai->audio_latency + HD_AUDIO_MSDELAY + 100;
             if (vi->fps > 0)
             {
                 diff = mtwvi->mstime - vi->last_mstime;
@@ -666,13 +707,15 @@ tmpegts_audio_cb(const void* data, int data_bytes,
 {
     int rv;
     int remainder;
+    struct video_audio_info* vai;
     struct audio_info* ai;
     unsigned char* cdata;
     int cdata_bytes;
     struct main_to_worker_audio_item* mtwai;
 
     rv = 0;
-    ai = ((struct video_audio_info*)udata)->ai;
+    vai = (struct video_audio_info*)udata;
+    ai = vai->ai;
     if (mpegts->payload_unit_start_indicator)
     {
         if (ai->frame_data_pos > 0)
@@ -825,6 +868,7 @@ main(int argc, char** argv)
     ai.frame_data_alloc = (char*)malloc(ai.frame_data_bytes + 16);
     ai.frame_data = (char*)((((long)ai.frame_data_alloc) + 15) & ~15);
     ai.continuity_counter = -1;
+    ai.audio_delay_list = list_create();
 
     memset(&cb, 0, sizeof(cb));
     cb.pids[0] = 0x31;
@@ -838,26 +882,26 @@ main(int argc, char** argv)
 
     if (hdhome_run_avcodec_init() != 0)
     {
-        printf("hdhome_run_avcodec_init failed\n");
+        LLOGLN(0, ("hdhome_run_avcodec_init failed"));
         return 1;
     }
 
     if (hdhome_run_x11_init() != 0)
     {
-        printf("hdhome_run_x11_init failed\n");
+        LLOGLN(0, ("hdhome_run_x11_init failed"));
         return 1;
     }
 
     error = hdhome_run_avcodec_ac3_create(&(ai.ac3_handle));
     if (error != 0)
     {
-        printf("hdhome_run_avcodec_ac3_create failed error %d\n", error);
+        LLOGLN(0, ("hdhome_run_avcodec_ac3_create failed error %d", error));
     }
 
     error = hdhome_run_avcodec_mpeg2_create(&(vi.mpeg2_handle));
     if (error != 0)
     {
-        printf("hdhome_run_avcodec_mpeg2_create failed error %d\n", error);
+        LLOGLN(0, ("hdhome_run_avcodec_mpeg2_create failed error %d", error));
     }
 
     pipe(g_main_to_worker_video_pipe);
@@ -868,7 +912,6 @@ main(int argc, char** argv)
     g_main_to_worker_video_list = list_create();
     g_worker_to_main_video_list = list_create();
     g_main_to_worker_audio_list = list_create();
-    g_audio_delay_list = list_create();
 
     hdhr = hdhomerun_device_create(HDHOMERUN_DEVICE_ID_WILDCARD, 0, 0, 0);
     if (hdhr != NULL)
@@ -876,9 +919,9 @@ main(int argc, char** argv)
         hdhr_vsck = hdhomerun_device_get_video_sock(hdhr);
         hdhr_sck = hdhomerun_video_get_sock(hdhr_vsck);
         dev_name = hdhomerun_device_get_name(hdhr);
-        printf("opened device %s\n", dev_name);
+        LLOGLN(0, ("opened device %s", dev_name));
         error = hdhomerun_device_stream_start(hdhr);
-        printf("hdhomerun_device_stream_start %d\n", error);
+        LLOGLN(0, ("hdhomerun_device_stream_start %d", error));
         if (error == 1)
         {
             memset(&mlcbi, 0, sizeof(mlcbi));
