@@ -90,6 +90,14 @@ struct video_audio_info
     struct audio_info* ai;
     int audio_latency;
     int pad0;
+    int main_to_worker_video_pipe[2];
+    int worker_to_main_video_pipe[2];
+    int main_to_worker_audio_pipe[2];
+    int term_pipe[2];
+    pthread_mutex_t mutex;
+    struct list* main_to_worker_video_list;
+    struct list* worker_to_main_video_list;
+    struct list* main_to_worker_audio_list;
 };
 
 struct mlcb_info
@@ -129,15 +137,6 @@ struct average_item
     int diff;
     int mstime;
 };
-
-static int g_main_to_worker_video_pipe[2];
-static int g_worker_to_main_video_pipe[2];
-static int g_main_to_worker_audio_pipe[2];
-static int g_term_pipe[2];
-static pthread_mutex_t g_mutex;
-static struct list* g_main_to_worker_video_list;
-static struct list* g_worker_to_main_video_list;
-static struct list* g_main_to_worker_audio_list;
 
 /*****************************************************************************/
 /* returns boolean */
@@ -211,7 +210,6 @@ audio_delay_list_get_average(struct list* alist, int now, int diff)
         {
             break;
         }
-        free(item);
         list_remove_item(alist, 0);
         item = (struct average_item*)list_get_item(alist, 0);
     }
@@ -230,93 +228,97 @@ audio_delay_list_get_average(struct list* alist, int now, int diff)
 
 /*****************************************************************************/
 static struct main_to_worker_video_item*
-get_main_to_worker_video_item(int mstime, int* wait_mstime)
+get_main_to_worker_video_item(struct video_audio_info* vai,
+                              int mstime, int* wait_mstime)
 {
     struct main_to_worker_video_item* mtwvi;
 
     LLOGLN(10, ("get_main_to_worker_video_item: count %d",
-           g_main_to_worker_video_list->count));
+           vai->main_to_worker_video_list->count));
     mtwvi = NULL;
-    pthread_mutex_lock(&g_mutex);
-    if (g_main_to_worker_video_list->count > 0)
+    pthread_mutex_lock(&(vai->mutex));
+    if (vai->main_to_worker_video_list->count > 0)
     {
         mtwvi = (struct main_to_worker_video_item*)
-                list_get_item(g_main_to_worker_video_list, 0);
+                list_get_item(vai->main_to_worker_video_list, 0);
         if (mtwvi->mstime > mstime)
         {
             *wait_mstime = mtwvi->mstime - mstime;
-            pthread_mutex_unlock(&g_mutex);
+            pthread_mutex_unlock(&(vai->mutex));
             return NULL;
         }
-        list_remove_item(g_main_to_worker_video_list, 0); 
+        list_remove_item(vai->main_to_worker_video_list, 0); 
     }
-    pthread_mutex_unlock(&g_mutex);
+    pthread_mutex_unlock(&(vai->mutex));
     return mtwvi;
 }
 
 /*****************************************************************************/
 static int
-add_main_to_worker_video_item(struct main_to_worker_video_item* mtwvi)
+add_main_to_worker_video_item(struct video_audio_info* vai,
+                              struct main_to_worker_video_item* mtwvi)
 {
-    pthread_mutex_lock(&g_mutex);
-    list_add_item(g_main_to_worker_video_list, (long)mtwvi);
-    pthread_mutex_unlock(&g_mutex);
+    pthread_mutex_lock(&(vai->mutex));
+    list_add_item(vai->main_to_worker_video_list, (long)mtwvi);
+    pthread_mutex_unlock(&(vai->mutex));
     return 0;
 }
 
 /*****************************************************************************/
 static struct worker_to_main_video_item*
-get_worker_to_main_video_item(void)
+get_worker_to_main_video_item(struct video_audio_info* vai)
 {
     struct worker_to_main_video_item* wtmvi;
 
     wtmvi = NULL;
-    pthread_mutex_lock(&g_mutex);
-    if (g_worker_to_main_video_list->count > 0)
+    pthread_mutex_lock(&(vai->mutex));
+    if (vai->worker_to_main_video_list->count > 0)
     {
         wtmvi = (struct worker_to_main_video_item*)
-                list_get_item(g_worker_to_main_video_list, 0);
-        list_remove_item(g_worker_to_main_video_list, 0);
+                list_get_item(vai->worker_to_main_video_list, 0);
+        list_remove_item(vai->worker_to_main_video_list, 0);
     }
-    pthread_mutex_unlock(&g_mutex);
+    pthread_mutex_unlock(&(vai->mutex));
     return wtmvi;
 }
 
 /*****************************************************************************/
 static int
-add_worker_to_main_video_item(struct worker_to_main_video_item* wtmvi)
+add_worker_to_main_video_item(struct video_audio_info* vai,
+                              struct worker_to_main_video_item* wtmvi)
 {
-    pthread_mutex_lock(&g_mutex);
-    list_add_item(g_worker_to_main_video_list, (long)wtmvi);
-    pthread_mutex_unlock(&g_mutex);
+    pthread_mutex_lock(&(vai->mutex));
+    list_add_item(vai->worker_to_main_video_list, (long)wtmvi);
+    pthread_mutex_unlock(&(vai->mutex));
     return 0;
 }
 
 /*****************************************************************************/
 static struct main_to_worker_audio_item*
-get_main_to_worker_audio_item(void)
+get_main_to_worker_audio_item(struct video_audio_info* vai)
 {
     struct main_to_worker_audio_item* mtwai;
 
     mtwai = NULL;
-    pthread_mutex_lock(&g_mutex);
-    if (g_main_to_worker_audio_list->count > 0)
+    pthread_mutex_lock(&(vai->mutex));
+    if (vai->main_to_worker_audio_list->count > 0)
     {
         mtwai = (struct main_to_worker_audio_item*)
-                list_get_item(g_main_to_worker_audio_list, 0);
-        list_remove_item(g_main_to_worker_audio_list, 0);
+                list_get_item(vai->main_to_worker_audio_list, 0);
+        list_remove_item(vai->main_to_worker_audio_list, 0);
     }
-    pthread_mutex_unlock(&g_mutex);
+    pthread_mutex_unlock(&(vai->mutex));
     return mtwai;
 }
 
 /*****************************************************************************/
 static int
-add_main_to_worker_audio_item(struct main_to_worker_audio_item* mtwai)
+add_main_to_worker_audio_item(struct video_audio_info* vai,
+                              struct main_to_worker_audio_item* mtwai)
 {
-    pthread_mutex_lock(&g_mutex);
-    list_add_item(g_main_to_worker_audio_list, (long)mtwai);
-    pthread_mutex_unlock(&g_mutex);
+    pthread_mutex_lock(&(vai->mutex));
+    list_add_item(vai->main_to_worker_audio_list, (long)mtwai);
+    pthread_mutex_unlock(&(vai->mutex));
     return 0;
 }
 
@@ -376,8 +378,8 @@ decode_video_and_send_back(struct video_audio_info* vai,
                     wtmvi->format = format;
                     wtmvi->width = width;
                     wtmvi->height = height;
-                    add_worker_to_main_video_item(wtmvi);
-                    pipe_set(g_worker_to_main_video_pipe);
+                    add_worker_to_main_video_item(vai, wtmvi);
+                    pipe_set(vai->worker_to_main_video_pipe);
                 }
                 else
                 {
@@ -425,39 +427,39 @@ video_thread_proc(void* arg)
     {
         max_fd = 0;
         FD_ZERO(&rfds_set);
-        FD_SET(g_term_pipe[0], &rfds_set);
-        if (g_term_pipe[0] > max_fd)
+        FD_SET(mlcbi->vai->term_pipe[0], &rfds_set);
+        if (mlcbi->vai->term_pipe[0] > max_fd)
         {
-            max_fd = g_term_pipe[0];
+            max_fd = mlcbi->vai->term_pipe[0];
         }
-        FD_SET(g_main_to_worker_video_pipe[0], &rfds_set);
-        if (g_main_to_worker_video_pipe[0] > max_fd)
+        FD_SET(mlcbi->vai->main_to_worker_video_pipe[0], &rfds_set);
+        if (mlcbi->vai->main_to_worker_video_pipe[0] > max_fd)
         {
-            max_fd = g_main_to_worker_video_pipe[0];
+            max_fd = mlcbi->vai->main_to_worker_video_pipe[0];
         }
         time.tv_sec = wait_mstime / 1000;
         time.tv_usec = (wait_mstime * 1000) % 1000000;
         status = select(max_fd + 1, &rfds_set, NULL, NULL, &time);
         if (status >= 0)
         {
-            if (FD_ISSET(g_term_pipe[0], &rfds_set))
+            if (FD_ISSET(mlcbi->vai->term_pipe[0], &rfds_set))
             {
                 cont = 0;
                 break;
             }
-            if (FD_ISSET(g_main_to_worker_video_pipe[0], &rfds_set))
+            if (FD_ISSET(mlcbi->vai->main_to_worker_video_pipe[0], &rfds_set))
             {
-                pipe_clear(g_main_to_worker_video_pipe);
+                pipe_clear(mlcbi->vai->main_to_worker_video_pipe);
             }
             now = get_mstime();
             wait_mstime = 1000;
-            mtwvi = get_main_to_worker_video_item(now, &wait_mstime);
+            mtwvi = get_main_to_worker_video_item(mlcbi->vai, now, &wait_mstime);
             while (mtwvi != NULL)
             {
                 video_process_item(mlcbi, mtwvi);
                 now = get_mstime();
                 wait_mstime = 1000;
-                mtwvi = get_main_to_worker_video_item(now, &wait_mstime);
+                mtwvi = get_main_to_worker_video_item(mlcbi->vai, now, &wait_mstime);
             }
         }
     }
@@ -571,32 +573,32 @@ audio_thread_proc(void* arg)
     {
         max_fd = 0;
         FD_ZERO(&rfds_set);
-        FD_SET(g_term_pipe[0], &rfds_set);
-        if (g_term_pipe[0] > max_fd)
+        FD_SET(mlcbi->vai->term_pipe[0], &rfds_set);
+        if (mlcbi->vai->term_pipe[0] > max_fd)
         {
-            max_fd = g_term_pipe[0];
+            max_fd = mlcbi->vai->term_pipe[0];
         }
-        FD_SET(g_main_to_worker_audio_pipe[0], &rfds_set);
-        if (g_main_to_worker_audio_pipe[0] > max_fd)
+        FD_SET(mlcbi->vai->main_to_worker_audio_pipe[0], &rfds_set);
+        if (mlcbi->vai->main_to_worker_audio_pipe[0] > max_fd)
         {
-            max_fd = g_main_to_worker_audio_pipe[0];
+            max_fd = mlcbi->vai->main_to_worker_audio_pipe[0];
         }
         status = select(max_fd + 1, &rfds_set, NULL, NULL, NULL);
         if (status > 0)
         {
-            if (FD_ISSET(g_term_pipe[0], &rfds_set))
+            if (FD_ISSET(mlcbi->vai->term_pipe[0], &rfds_set))
             {
                 cont = 0;
                 break;
             }
-            if (FD_ISSET(g_main_to_worker_audio_pipe[0], &rfds_set))
+            if (FD_ISSET(mlcbi->vai->main_to_worker_audio_pipe[0], &rfds_set))
             {
-                pipe_clear(g_main_to_worker_audio_pipe);
-                mtwai = get_main_to_worker_audio_item();
+                pipe_clear(mlcbi->vai->main_to_worker_audio_pipe);
+                mtwai = get_main_to_worker_audio_item(mlcbi->vai);
                 while (mtwai != NULL)
                 {
                     audio_process_item(mlcbi, mtwai);
-                    mtwai = get_main_to_worker_audio_item();
+                    mtwai = get_main_to_worker_audio_item(mlcbi->vai);
                 }
             }
         }
@@ -671,8 +673,8 @@ tmpegts_video_cb(const void* data, int data_bytes,
                 }
             }
             vi->last_mstime = mtwvi->mstime;
-            add_main_to_worker_video_item(mtwvi);
-            pipe_set(g_main_to_worker_video_pipe);
+            add_main_to_worker_video_item(vai, mtwvi);
+            pipe_set(vai->main_to_worker_video_pipe);
             vi->frame_data_pos = 0;
         }
         vi->started = 1;
@@ -730,8 +732,8 @@ tmpegts_audio_cb(const void* data, int data_bytes,
             memcpy(mtwai->data, cdata, cdata_bytes);
             mtwai->data_bytes = cdata_bytes;
             mtwai->mstime_in = get_mstime();
-            add_main_to_worker_audio_item(mtwai);
-            pipe_set(g_main_to_worker_audio_pipe);
+            add_main_to_worker_audio_item(vai, mtwai);
+            pipe_set(vai->main_to_worker_audio_pipe);
             ai->frame_data_pos = 0;
         }
         ai->started = 1;
@@ -805,13 +807,13 @@ video_callback(int sck, void* udata)
     int bytes;
     struct worker_to_main_video_item* wtmvi;
 
-    pipe_clear(g_worker_to_main_video_pipe);
     mlcbi = (struct mlcb_info*)udata;
     if (mlcbi == NULL)
     {
         return 1;
     }
-    wtmvi = get_worker_to_main_video_item();
+    pipe_clear(mlcbi->vai->worker_to_main_video_pipe);
+    wtmvi = get_worker_to_main_video_item(mlcbi->vai);
     while (wtmvi != NULL)
     {
         error = hdhome_run_x11_get_buffer(wtmvi->width, wtmvi->height,
@@ -831,7 +833,7 @@ video_callback(int sck, void* udata)
         }
         free(wtmvi->data);
         free(wtmvi);
-        wtmvi = get_worker_to_main_video_item();
+        wtmvi = get_worker_to_main_video_item(mlcbi->vai);
     }
     return 0;
 }
@@ -869,6 +871,7 @@ main(int argc, char** argv)
     ai.frame_data = (char*)((((long)ai.frame_data_alloc) + 15) & ~15);
     ai.continuity_counter = -1;
     ai.audio_delay_list = list_create();
+    ai.audio_delay_list->auto_free = 1;
 
     memset(&cb, 0, sizeof(cb));
     cb.pids[0] = 0x31;
@@ -879,6 +882,14 @@ main(int argc, char** argv)
     memset(&vai, 0, sizeof(vai));
     vai.vi = &vi;
     vai.ai = &ai;
+    pipe(vai.main_to_worker_video_pipe);
+    pipe(vai.worker_to_main_video_pipe);
+    pipe(vai.main_to_worker_audio_pipe);
+    pipe(vai.term_pipe);
+    pthread_mutex_init(&(vai.mutex), 0);
+    vai.main_to_worker_video_list = list_create();
+    vai.worker_to_main_video_list = list_create();
+    vai.main_to_worker_audio_list = list_create();
 
     if (hdhome_run_avcodec_init() != 0)
     {
@@ -904,15 +915,6 @@ main(int argc, char** argv)
         LLOGLN(0, ("hdhome_run_avcodec_mpeg2_create failed error %d", error));
     }
 
-    pipe(g_main_to_worker_video_pipe);
-    pipe(g_worker_to_main_video_pipe);
-    pipe(g_main_to_worker_audio_pipe);
-    pipe(g_term_pipe);
-    pthread_mutex_init(&g_mutex, 0);
-    g_main_to_worker_video_list = list_create();
-    g_worker_to_main_video_list = list_create();
-    g_main_to_worker_audio_list = list_create();
-
     hdhr = hdhomerun_device_create(HDHOMERUN_DEVICE_ID_WILDCARD, 0, 0, 0);
     if (hdhr != NULL)
     {
@@ -930,7 +932,7 @@ main(int argc, char** argv)
             mlcbi.vai = &vai;
             scks[0] = hdhr_sck;
             mlcbs[0] = hdhome_run_callback;
-            scks[1] = g_worker_to_main_video_pipe[0];
+            scks[1] = vai.worker_to_main_video_pipe[0];
             mlcbs[1] = video_callback;
             thread = 0;
             pthread_create(&thread, 0, video_thread_proc, &mlcbi);
