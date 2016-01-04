@@ -23,7 +23,9 @@
 
 #include "mpeg_ts.h"
 
-int get_mstime(void)
+/*****************************************************************************/
+int
+get_mstime(void)
 {
     struct timeval tp;
 
@@ -31,7 +33,9 @@ int get_mstime(void)
     return (tp.tv_sec * 1000) + (tp.tv_usec / 1000);
 }
 
-int hex_dump(const void* data, int bytes)
+/*****************************************************************************/
+int
+hex_dump(const void* data, int bytes)
 {
     const unsigned char *line;
     int i;
@@ -67,7 +71,10 @@ int hex_dump(const void* data, int bytes)
     return 0;
 }
 
-int process_mpeg_ts_packet(const void* data, int bytes, const struct tmpegts_cb* cb, void* udata)
+/*****************************************************************************/
+int
+process_mpeg_ts_packet(const void* data, int bytes,
+                       const struct tmpegts_cb* cb, void* udata)
 {
     unsigned int header;
     struct tmpegts mpegts;
@@ -159,7 +166,7 @@ int process_mpeg_ts_packet(const void* data, int bytes, const struct tmpegts_cb*
     if ((cb != 0) && (cb_bytes > 0) && mpegts.payload_flag)
     {
         index = 0;
-        while ((cb->pids[index] != 0) && (index < 32))
+        while (index < cb->num_pids)
         {
             if (cb->pids[index] == mpegts.pid)
             {

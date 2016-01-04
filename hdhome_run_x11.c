@@ -32,6 +32,18 @@
 
 #include "hdhome_run_x11.h"
 
+#define LLOG_LEVEL 1
+#define LLOGLN(_level, _args) \
+  do \
+  { \
+    if (_level < LLOG_LEVEL) \
+    { \
+        printf _args ; \
+        printf("\n"); \
+    } \
+  } \
+  while (0)
+
 static Display* g_disp = 0;
 static int g_screenNumber = 0;
 static Window g_win = 0;
@@ -65,11 +77,11 @@ hdhome_run_x11_init(void)
     XvAdaptorInfo* ai;
     XEvent evt;
 
-    printf("hdhomerun_x11_init:\n");
+    LLOGLN(0, ("hdhomerun_x11_init:"));
     g_disp = XOpenDisplay(NULL);
     if (g_disp == 0)
     {
-        printf("error opening X display\n");
+        LLOGLN(0, ("error opening X display"));
         return 1;
     }
     g_screenNumber = DefaultScreen(g_disp);
@@ -86,13 +98,13 @@ hdhome_run_x11_init(void)
     ret = XvQueryExtension(g_disp, &version, &release, &request_base, &event_base, &error_base);
     if (ret != Success)
     {
-        printf("XvQueryExtension failedd\n");
+        LLOGLN(0, ("XvQueryExtension failedd"));
     }
     g_xv_event_base = event_base;
     ret = XvQueryAdaptors(g_disp, DefaultRootWindow(g_disp), &num_adaptors, &ai);
     if (ret != Success)
     {
-        printf("XvQueryAdaptors failedd\n");
+        LLOGLN(0, ("XvQueryAdaptors failedd"));
     }
 
     for (index = 0; index < num_adaptors; index++)
@@ -117,7 +129,7 @@ hdhome_run_x11_get_buffer(int width, int height, int format,
 {
     int bytes;
 
-    //printf("hdhome_run_x11_get_buffer:\n");
+    LLOGLN(10, ("hdhome_run_x11_get_buffer:"));
     bytes = width * height * 2;
     if (bytes > g_xv_shmbytes)
     {
@@ -146,7 +158,7 @@ hdhome_run_x11_show_buffer(int width, int height, int format,
     XvImage * image;
     int ratio;
 
-    //printf("hdhome_run_x11_show_buffer:\n");
+    LLOGLN(10, ("hdhome_run_x11_show_buffer:"));
     switch (format)
     {
         //dst_pixfmt = 0x30323449; /* I420 */
@@ -212,7 +224,7 @@ hdhome_run_x11_main_loop(int* sck, tmlcb* cb, int count, void* udata)
     int cont;
     int index;
 
-    printf("hdhome_run_x11_main_loop:\n");
+    LLOGLN(0, ("hdhome_run_x11_main_loop:"));
     error = 0;
     cont = 1;
     while (cont)
@@ -242,7 +254,8 @@ hdhome_run_x11_main_loop(int* sck, tmlcb* cb, int count, void* udata)
                     error = (cb[index])(sck[index], udata);
                     if (error != 0)
                     {
-                        printf("hdhome_run_x11_main_loop: cb failed\n");
+                        LLOGLN(0, ("hdhome_run_x11_main_loop: cb failed "
+                               "index %d sck %d\n", index, sck[index]));
                     }
                 }
             }

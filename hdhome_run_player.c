@@ -84,10 +84,23 @@ struct audio_info
     struct list* audio_delay_list;
 };
 
+struct zero_info
+{
+    int started;
+    int pad0;
+    char* frame_data_alloc;
+    char* frame_data;
+    int frame_data_bytes;
+    int frame_data_pos;
+    int continuity_counter;
+    int pad1;
+};
+
 struct video_audio_info
 {
     struct video_info* vi;
     struct audio_info* ai;
+    struct zero_info* zi;
     int audio_latency;
     int pad0;
     int main_to_worker_video_pipe[2];
@@ -486,6 +499,7 @@ decode_and_present_audio(struct video_audio_info* vai,
     int out_data_bytes;
     int diff;
     int now;
+    int pa_flags;
     void* out_data;
     unsigned char* cdata;
     int cdata_bytes;
@@ -526,10 +540,21 @@ decode_and_present_audio(struct video_audio_info* vai,
                         ai->pa_handle = hdhome_run_pa_init("hdhome_run_player");
                         if (ai->pa_handle != NULL)
                         {
+                            switch (channels)
+                            {
+                                case 1:
+                                    pa_flags = CAP_PA_FORMAT_48000_1CH_16LE;
+                                    break;
+                                case 2:
+                                    pa_flags = CAP_PA_FORMAT_48000_2CH_16LE;
+                                    break;
+                                default:
+                                    pa_flags = CAP_PA_FORMAT_48000_6CH_16LE;
+                                    break;
+                            }
                             hdhome_run_pa_start(ai->pa_handle,
                                                 "hdhome_run_player",
-                                                HD_AUDIO_MSDELAY,
-                                                CAP_PA_FORMAT_48000_6CH_16LE);
+                                                HD_AUDIO_MSDELAY, pa_flags);
                         }
                     }
                     if (ai->pa_handle != NULL)
@@ -772,6 +797,61 @@ tmpegts_audio_cb(const void* data, int data_bytes,
 
 /*****************************************************************************/
 static int
+tmpegts_zero_cb(const void* data, int data_bytes,
+                const struct tmpegts* mpegts, void* udata)
+{
+    //int remainder;
+    struct video_audio_info* vai;
+    struct zero_info* zi;
+    //unsigned char* cdata;
+    //int cdata_bytes;
+
+    LLOGLN(10, ("tmpegts_zero_cb:"));
+    vai = (struct video_audio_info*)udata;
+    zi = vai->zi;
+    if (mpegts->payload_unit_start_indicator)
+    {
+        if (zi->frame_data_pos > 0)
+        {
+            //LLOGLN(0, ("tmpegts_zero_cb: got frame bytes %d", zi->frame_data_pos));
+            //hex_dump(zi->frame_data, zi->frame_data_pos);
+            /* https://en.wikipedia.org/wiki/Packetized_elementary_stream */
+            //remainder = (unsigned char)(zi->frame_data[8]);
+            //cdata = (unsigned char*)(zi->frame_data + (9 + remainder));
+            //cdata_bytes = zi->frame_data_pos - (9 + remainder);
+            //LLOGLN(0, ("tmpegts_zero_cb: got frame bytes %d", cdata_bytes));
+            //hex_dump(cdata, 128);
+            zi->frame_data_pos = 0;
+        }
+        zi->started = 1;
+    }
+    if (zi->started)
+    {
+        memcpy(zi->frame_data + zi->frame_data_pos, data, data_bytes);
+        zi->frame_data_pos += data_bytes;
+    }
+    if (zi->continuity_counter == -1)
+    {
+        LLOGLN(10, ("tmpegts_zero_cb: continuity_counter old %d new %d",
+               zi->continuity_counter, mpegts->continuity_counter));
+        zi->continuity_counter = mpegts->continuity_counter;
+    }
+    if (zi->continuity_counter != mpegts->continuity_counter)
+    {
+        LLOGLN(10, ("tmpegts_zero_cb: continuity_counter old %d new %d",
+               zi->continuity_counter, mpegts->continuity_counter));
+        zi->continuity_counter = mpegts->continuity_counter;
+    }
+    zi->continuity_counter++;
+    if (zi->continuity_counter > 15)
+    {
+        zi->continuity_counter = 0;
+    }
+    return 0;
+}
+
+/*****************************************************************************/
+static int
 hdhome_run_callback(int sck, void* udata)
 {
     size_t bytes;
@@ -860,6 +940,7 @@ main(int argc, char** argv)
     struct tmpegts_cb cb;
     struct video_info vi;
     struct audio_info ai;
+    struct zero_info zi;
     struct video_audio_info vai;
     int scks[32];
     tmlcb mlcbs[32];
@@ -883,15 +964,26 @@ main(int argc, char** argv)
     ai.audio_delay_list = list_create();
     ai.audio_delay_list->auto_free = 1;
 
+    memset(&zi, 0, sizeof(zi));
+    zi.frame_data_bytes = 1024 * 1024;
+    zi.frame_data_alloc = (char*)malloc(zi.frame_data_bytes + 16);
+    zi.frame_data = (char*)((((long)zi.frame_data_alloc) + 15) & ~15);
+    zi.continuity_counter = -1;
+
     memset(&cb, 0, sizeof(cb));
     cb.pids[0] = 0x31;
     cb.pids[1] = 0x34;
+    //cb.pids[1] = 0x35;
+    cb.pids[2] = 0x00;
     cb.procs[0] = tmpegts_video_cb;
     cb.procs[1] = tmpegts_audio_cb;
+    cb.procs[2] = tmpegts_zero_cb;
+    cb.num_pids = 3;
 
     memset(&vai, 0, sizeof(vai));
     vai.vi = &vi;
     vai.ai = &ai;
+    vai.zi = &zi;
     pipe(vai.main_to_worker_video_pipe);
     pipe(vai.worker_to_main_video_pipe);
     pipe(vai.main_to_worker_audio_pipe);

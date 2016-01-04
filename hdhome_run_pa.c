@@ -203,6 +203,11 @@ hdhome_run_pa_start(void* handle, const char* name, int ms_latency, int format)
     memset(&sample_spec, 0, sizeof(sample_spec));
     switch (format)
     {
+        case CAP_PA_FORMAT_48000_1CH_16LE:
+            sample_spec.rate = 48000;
+            sample_spec.channels = 1;
+            sample_spec.format = PA_SAMPLE_S16LE;
+            break;
         case CAP_PA_FORMAT_48000_2CH_16LE:
             sample_spec.rate = 48000;
             sample_spec.channels = 2;

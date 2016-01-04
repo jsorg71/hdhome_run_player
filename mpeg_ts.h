@@ -27,6 +27,8 @@ struct tmpegts_cb
 {
     int pids[32];
     tmpegts_cb_proc procs[32];
+    int num_pids;
+    int pad0;
 };
 
 struct tmpegts
