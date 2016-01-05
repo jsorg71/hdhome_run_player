@@ -84,6 +84,18 @@ struct audio_info
     struct list* audio_delay_list;
 };
 
+struct program_info
+{
+    int started;
+    int pad0;
+    char* frame_data_alloc;
+    char* frame_data;
+    int frame_data_bytes;
+    int frame_data_pos;
+    int continuity_counter;
+    int pad1;
+};
+
 struct zero_info
 {
     int started;
@@ -100,6 +112,7 @@ struct video_audio_info
 {
     struct video_info* vi;
     struct audio_info* ai;
+    struct program_info* pi;
     struct zero_info* zi;
     int audio_latency;
     int pad0;
@@ -473,13 +486,15 @@ video_thread_proc(void* arg)
             }
             now = get_mstime();
             wait_mstime = 1000;
-            mtwvi = get_main_to_worker_video_item(mlcbi->vai, now, &wait_mstime);
+            mtwvi = get_main_to_worker_video_item(mlcbi->vai, now,
+                                                  &wait_mstime);
             while (mtwvi != NULL)
             {
                 video_process_item(mlcbi, mtwvi);
                 now = get_mstime();
                 wait_mstime = 1000;
-                mtwvi = get_main_to_worker_video_item(mlcbi->vai, now, &wait_mstime);
+                mtwvi = get_main_to_worker_video_item(mlcbi->vai, now,
+                                                      &wait_mstime);
             }
         }
     }
@@ -648,6 +663,7 @@ tmpegts_video_cb(const void* data, int data_bytes,
 {
     int rv;
     int remainder;
+    struct mlcb_info* mlcbi;
     struct video_audio_info* vai;
     struct video_info* vi;
     unsigned char* cdata;
@@ -657,7 +673,8 @@ tmpegts_video_cb(const void* data, int data_bytes,
     struct main_to_worker_video_item* mtwvi;
 
     rv = 0;
-    vai = (struct video_audio_info*)udata;
+    mlcbi = (struct mlcb_info*)udata;
+    vai = mlcbi->vai;
     vi = vai->vi;
     if (mpegts->payload_unit_start_indicator)
     {
@@ -744,6 +761,7 @@ tmpegts_audio_cb(const void* data, int data_bytes,
 {
     int rv;
     int remainder;
+    struct mlcb_info* mlcbi;
     struct video_audio_info* vai;
     struct audio_info* ai;
     unsigned char* cdata;
@@ -751,7 +769,8 @@ tmpegts_audio_cb(const void* data, int data_bytes,
     struct main_to_worker_audio_item* mtwai;
 
     rv = 0;
-    vai = (struct video_audio_info*)udata;
+    mlcbi = (struct mlcb_info*)udata;
+    vai = mlcbi->vai;
     ai = vai->ai;
     if (mpegts->payload_unit_start_indicator)
     {
@@ -797,30 +816,80 @@ tmpegts_audio_cb(const void* data, int data_bytes,
 
 /*****************************************************************************/
 static int
+tmpegts_program_cb(const void* data, int data_bytes,
+                   const struct tmpegts* mpegts, void* udata)
+{
+    struct mlcb_info* mlcbi;
+    struct video_audio_info* vai;
+    struct program_info* pi;
+
+    LLOGLN(10, ("tmpegts_program_cb:"));
+    mlcbi = (struct mlcb_info*)udata;
+    vai = mlcbi->vai;
+    pi = vai->pi;
+    if (mpegts->payload_unit_start_indicator)
+    {
+        if (pi->frame_data_pos > 0)
+        {
+            if (mlcbi->cb->num_pids == 2)
+            {
+                LLOGLN(0, ("tmpegts_program_cb: adding pids for "
+                       "video and audio"));
+                mlcbi->cb->pids[2] = 0x31;
+                mlcbi->cb->pids[3] = 0x34;
+                mlcbi->cb->procs[2] = tmpegts_video_cb;
+                mlcbi->cb->procs[3] = tmpegts_audio_cb;
+                mlcbi->cb->num_pids = 4;
+            }
+            pi->frame_data_pos = 0;
+        }
+        pi->started = 1;
+    }
+    if (pi->started)
+    {
+        memcpy(pi->frame_data + pi->frame_data_pos, data, data_bytes);
+        pi->frame_data_pos += data_bytes;
+    }
+    if (pi->continuity_counter == -1)
+    {
+        pi->continuity_counter = mpegts->continuity_counter;
+    }
+    if (pi->continuity_counter != mpegts->continuity_counter)
+    {
+        pi->continuity_counter = mpegts->continuity_counter;
+    }
+    pi->continuity_counter++;
+    if (pi->continuity_counter > 15)
+    {
+        pi->continuity_counter = 0;
+    }
+    return 0;
+}
+
+/*****************************************************************************/
+static int
 tmpegts_zero_cb(const void* data, int data_bytes,
                 const struct tmpegts* mpegts, void* udata)
 {
-    //int remainder;
+    struct mlcb_info* mlcbi;
     struct video_audio_info* vai;
     struct zero_info* zi;
-    //unsigned char* cdata;
-    //int cdata_bytes;
 
     LLOGLN(10, ("tmpegts_zero_cb:"));
-    vai = (struct video_audio_info*)udata;
+    mlcbi = (struct mlcb_info*)udata;
+    vai = mlcbi->vai;
     zi = vai->zi;
     if (mpegts->payload_unit_start_indicator)
     {
         if (zi->frame_data_pos > 0)
         {
-            //LLOGLN(0, ("tmpegts_zero_cb: got frame bytes %d", zi->frame_data_pos));
-            //hex_dump(zi->frame_data, zi->frame_data_pos);
-            /* https://en.wikipedia.org/wiki/Packetized_elementary_stream */
-            //remainder = (unsigned char)(zi->frame_data[8]);
-            //cdata = (unsigned char*)(zi->frame_data + (9 + remainder));
-            //cdata_bytes = zi->frame_data_pos - (9 + remainder);
-            //LLOGLN(0, ("tmpegts_zero_cb: got frame bytes %d", cdata_bytes));
-            //hex_dump(cdata, 128);
+            if (mlcbi->cb->num_pids == 1)
+            {
+                LLOGLN(0, ("tmpegts_zero_cb: adding pids for program"));
+                mlcbi->cb->pids[1] = 0x30;
+                mlcbi->cb->procs[1] = tmpegts_program_cb;
+                mlcbi->cb->num_pids = 2;
+            }
             zi->frame_data_pos = 0;
         }
         zi->started = 1;
@@ -832,14 +901,10 @@ tmpegts_zero_cb(const void* data, int data_bytes,
     }
     if (zi->continuity_counter == -1)
     {
-        LLOGLN(10, ("tmpegts_zero_cb: continuity_counter old %d new %d",
-               zi->continuity_counter, mpegts->continuity_counter));
         zi->continuity_counter = mpegts->continuity_counter;
     }
     if (zi->continuity_counter != mpegts->continuity_counter)
     {
-        LLOGLN(10, ("tmpegts_zero_cb: continuity_counter old %d new %d",
-               zi->continuity_counter, mpegts->continuity_counter));
         zi->continuity_counter = mpegts->continuity_counter;
     }
     zi->continuity_counter++;
@@ -873,7 +938,7 @@ hdhome_run_callback(int sck, void* udata)
             {
                 lbytes = 188;
             }
-            error = process_mpeg_ts_packet(data, lbytes, mlcbi->cb, mlcbi->vai);
+            error = process_mpeg_ts_packet(data, lbytes, mlcbi->cb, mlcbi);
             data += lbytes;
             bytes -= lbytes;
         }
@@ -940,6 +1005,7 @@ main(int argc, char** argv)
     struct tmpegts_cb cb;
     struct video_info vi;
     struct audio_info ai;
+    struct program_info pi;
     struct zero_info zi;
     struct video_audio_info vai;
     int scks[32];
@@ -964,6 +1030,12 @@ main(int argc, char** argv)
     ai.audio_delay_list = list_create();
     ai.audio_delay_list->auto_free = 1;
 
+    memset(&pi, 0, sizeof(pi));
+    pi.frame_data_bytes = 1024 * 1024;
+    pi.frame_data_alloc = (char*)malloc(pi.frame_data_bytes + 16);
+    pi.frame_data = (char*)((((long)pi.frame_data_alloc) + 15) & ~15);
+    pi.continuity_counter = -1;
+
     memset(&zi, 0, sizeof(zi));
     zi.frame_data_bytes = 1024 * 1024;
     zi.frame_data_alloc = (char*)malloc(zi.frame_data_bytes + 16);
@@ -971,18 +1043,14 @@ main(int argc, char** argv)
     zi.continuity_counter = -1;
 
     memset(&cb, 0, sizeof(cb));
-    cb.pids[0] = 0x31;
-    cb.pids[1] = 0x34;
-    //cb.pids[1] = 0x35;
-    cb.pids[2] = 0x00;
-    cb.procs[0] = tmpegts_video_cb;
-    cb.procs[1] = tmpegts_audio_cb;
-    cb.procs[2] = tmpegts_zero_cb;
-    cb.num_pids = 3;
+    cb.pids[0] = 0x00;
+    cb.procs[0] = tmpegts_zero_cb;
+    cb.num_pids = 1;
 
     memset(&vai, 0, sizeof(vai));
     vai.vi = &vi;
     vai.ai = &ai;
+    vai.pi = &pi;
     vai.zi = &zi;
     pipe(vai.main_to_worker_video_pipe);
     pipe(vai.worker_to_main_video_pipe);
