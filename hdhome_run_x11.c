@@ -223,8 +223,11 @@ hdhome_run_x11_main_loop(int* sck, tmlcb* cb, int count, void* udata)
     int error;
     int cont;
     int index;
+    int mstimeout;
+    struct timeval time;
 
     LLOGLN(0, ("hdhome_run_x11_main_loop:"));
+    mstimeout = 32;
     error = 0;
     cont = 1;
     while (cont)
@@ -244,19 +247,18 @@ hdhome_run_x11_main_loop(int* sck, tmlcb* cb, int count, void* udata)
                 max_fd = sck[index];
             }
         }
-        status = select(max_fd + 1, &rfds_set, NULL, NULL, NULL);
-        if (status > 0)
+        time.tv_sec = mstimeout / 1000;
+        time.tv_usec = (mstimeout * 1000) % 1000000;
+        status = select(max_fd + 1, &rfds_set, NULL, NULL, &time);
+        if (status >= 0)
         {
             for (index = 0; index < count; index++)
             {
-                if (FD_ISSET(sck[index], &rfds_set))
+                error = (cb[index])(sck[index], udata);
+                if (error != 0)
                 {
-                    error = (cb[index])(sck[index], udata);
-                    if (error != 0)
-                    {
-                        LLOGLN(0, ("hdhome_run_x11_main_loop: cb failed "
-                               "index %d sck %d\n", index, sck[index]));
-                    }
+                    LLOGLN(0, ("hdhome_run_x11_main_loop: cb failed "
+                           "index %d sck %d\n", index, sck[index]));
                 }
             }
             while (XPending(g_disp) > 0)

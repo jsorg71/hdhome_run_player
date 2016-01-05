@@ -634,7 +634,7 @@ audio_thread_proc(void* arg)
             max_fd = mlcbi->vai->main_to_worker_audio_pipe[0];
         }
         status = select(max_fd + 1, &rfds_set, NULL, NULL, NULL);
-        if (status > 0)
+        if (status >= 0)
         {
             if (FD_ISSET(mlcbi->vai->term_pipe[0], &rfds_set))
             {
@@ -644,12 +644,12 @@ audio_thread_proc(void* arg)
             if (FD_ISSET(mlcbi->vai->main_to_worker_audio_pipe[0], &rfds_set))
             {
                 pipe_clear(mlcbi->vai->main_to_worker_audio_pipe);
+            }
+            mtwai = get_main_to_worker_audio_item(mlcbi->vai);
+            while (mtwai != NULL)
+            {
+                audio_process_item(mlcbi, mtwai);
                 mtwai = get_main_to_worker_audio_item(mlcbi->vai);
-                while (mtwai != NULL)
-                {
-                    audio_process_item(mlcbi, mtwai);
-                    mtwai = get_main_to_worker_audio_item(mlcbi->vai);
-                }
             }
         }
     }
