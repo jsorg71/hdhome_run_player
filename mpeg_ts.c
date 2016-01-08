@@ -129,16 +129,6 @@ process_mpeg_ts_packet(const void* data, int bytes,
         {
             /* 48 bit */
             memcpy(mpegts.pcr, data8 - mpegts.adaptation_field_length + 1, 6);
-            /* 33 bit time */
-            //mpegts.pcr_time = mpegts.pcr[0];
-            //mpegts.pcr_time <<= 8;
-            //mpegts.pcr_time |= mpegts.pcr[1];
-            //mpegts.pcr_time <<= 8;
-            //mpegts.pcr_time |= mpegts.pcr[2];
-            //mpegts.pcr_time <<= 8;
-            //mpegts.pcr_time |= mpegts.pcr[3];
-            //mpegts.pcr_time <<= 1;
-            //mpegts.pcr_time |= ((mpegts.pcr[4] & 0x80) >> 7);
         }
         if (mpegts.opcr_flag)
         {
@@ -163,7 +153,7 @@ process_mpeg_ts_packet(const void* data, int bytes,
 
     //printf("pid 0x%4.4x\n", mpegts.pid);
     cb_bytes = (int) (data8_end - data8);
-    if ((cb != 0) && (cb_bytes > 0) && mpegts.payload_flag)
+    if (cb != 0)
     {
         index = 0;
         while (index < cb->num_pids)

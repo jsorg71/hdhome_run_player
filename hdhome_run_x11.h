@@ -30,7 +30,8 @@ int
 hdhome_run_x11_show_buffer(int width, int height, int format,
                            void* buffer);
 int
-hdhome_run_x11_main_loop(int* sck, tmlcb* cb, int count, void* udata);
+hdhome_run_x11_main_loop(int* sck, tmlcb* cb, int count, void* udata,
+                         int term_fd);
 
 #endif
 

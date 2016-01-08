@@ -52,10 +52,7 @@ struct tmpegts
     int splicing_point_flag;
     int transport_private_data_flag;
     int adaptation_field_extension_flag;
-
     unsigned char pcr[6];
-    //long long pcr_time;
-
 };
 
 int get_mstime(void);

@@ -28,8 +28,8 @@ extern "C"
 #define CAP_PA_FORMAT_48000_2CH_16LE 2
 #define CAP_PA_FORMAT_48000_6CH_16LE 6
 
-void*
-hdhome_run_pa_init(const char* name);
+int
+hdhome_run_pa_init(const char* name, void** handle);
 int
 hdhome_run_pa_deinit(void* handle);
 int

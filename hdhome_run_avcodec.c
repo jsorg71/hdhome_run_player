@@ -76,6 +76,7 @@ struct avcodec_mpeg2
     AVFrame* frame;
 };
 
+/*****************************************************************************/
 int
 hdhome_run_avcodec_init(void)
 {
@@ -83,6 +84,7 @@ hdhome_run_avcodec_init(void)
     return 0;
 }
 
+/*****************************************************************************/
 int
 hdhome_run_avcodec_ac3_create(void** obj)
 {
@@ -124,6 +126,7 @@ hdhome_run_avcodec_ac3_create(void** obj)
     return 0;
 }
 
+/*****************************************************************************/
 int
 hdhome_run_avcodec_ac3_delete(void* obj)
 {
@@ -140,6 +143,7 @@ hdhome_run_avcodec_ac3_delete(void* obj)
     return 0;
 }
 
+/*****************************************************************************/
 int
 hdhome_run_avcodec_ac3_decode(void* obj, void* cdata, int cdata_bytes,
                               int* cdata_bytes_processed, int* decoded)
@@ -185,6 +189,7 @@ hdhome_run_avcodec_ac3_decode(void* obj, void* cdata, int cdata_bytes,
     return 0;
 }
 
+/*****************************************************************************/
 int
 hdhome_run_avcodec_ac3_get_frame_info(void* obj, int* channels, int* format,
                                       int* bytes)
@@ -213,6 +218,7 @@ hdhome_run_avcodec_ac3_get_frame_info(void* obj, int* channels, int* format,
     return 0;
 }
 
+/*****************************************************************************/
 int
 hdhome_run_avcodec_ac3_get_frame_data(void* obj, void* data, int data_bytes)
 {
@@ -244,7 +250,7 @@ hdhome_run_avcodec_ac3_get_frame_data(void* obj, void* data, int data_bytes)
         dst = (short*)data;
         for (index = 0; index < self->frame->nb_samples; index++)
         {
-            if (data_bytes < 6)
+            if (data_bytes < 12) /* 6 shorts */
             {
                 break;
             }
@@ -255,7 +261,7 @@ hdhome_run_avcodec_ac3_get_frame_data(void* obj, void* data, int data_bytes)
             dst[4] = src[4][index] * 32768;
             dst[5] = src[5][index] * 32768;
             dst += 6;
-            data_bytes -= 6;
+            data_bytes -= 12; /* 6 shorts */
         }
 #else
         /* self->frame->data only has 4 elements */
@@ -269,6 +275,7 @@ hdhome_run_avcodec_ac3_get_frame_data(void* obj, void* data, int data_bytes)
     return 0;
 }
 
+/*****************************************************************************/
 int
 hdhome_run_avcodec_mpeg2_create(void** obj)
 {
@@ -310,6 +317,7 @@ hdhome_run_avcodec_mpeg2_create(void** obj)
     return 0;
 }
 
+/*****************************************************************************/
 int
 hdhome_run_avcodec_mpeg2_delete(void* obj)
 {
@@ -326,6 +334,7 @@ hdhome_run_avcodec_mpeg2_delete(void* obj)
     return 0;
 }
 
+/*****************************************************************************/
 int
 hdhome_run_avcodec_mpeg2_decode(void* obj, void* cdata, int cdata_bytes,
                                 int* cdata_bytes_processed, int* decoded)
@@ -371,6 +380,7 @@ hdhome_run_avcodec_mpeg2_decode(void* obj, void* cdata, int cdata_bytes,
     return 0;
 }
 
+/*****************************************************************************/
 int
 hdhome_run_avcodec_mpeg2_get_frame_info(void* obj, int* width, int* height,
                                         int* format, int* bytes)
@@ -393,6 +403,7 @@ hdhome_run_avcodec_mpeg2_get_frame_info(void* obj, int* width, int* height,
     return 0;
 }
 
+/*****************************************************************************/
 int
 hdhome_run_avcodec_mpeg2_get_frame_data(void* obj, void* data, int data_bytes)
 {

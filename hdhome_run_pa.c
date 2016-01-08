@@ -73,8 +73,8 @@ hdhome_run_pa_context_state_callback(pa_context* context, void* userdata)
 }
 
 /******************************************************************************/
-void*
-hdhome_run_pa_init(const char* name)
+int
+hdhome_run_pa_init(const char* name, void** handle)
 {
     struct hdhomerun_pa* self;
     pa_mainloop_api* api;
@@ -86,7 +86,7 @@ hdhome_run_pa_init(const char* name)
     if (self->pa_mainloop == 0)
     {
         LLOGLN(0, ("hdhome_run_pa_init: pa_threaded_mainloop_new failed"));
-        return 0;
+        return 1;
     }
     api = pa_threaded_mainloop_get_api(self->pa_mainloop);
     self->pa_context = pa_context_new(api, name);
@@ -94,7 +94,7 @@ hdhome_run_pa_init(const char* name)
     {
         LLOGLN(0, ("hdhome_run_pa_init: pa_context_new failed"));
         pa_threaded_mainloop_free(self->pa_mainloop);
-        return 0;
+        return 2;
     }
     pa_context_set_state_callback(self->pa_context,
                                   hdhome_run_pa_context_state_callback, self);
@@ -103,7 +103,7 @@ hdhome_run_pa_init(const char* name)
         LLOGLN(0, ("hdhome_run_pa_init: pa_context_connect failed"));
         pa_context_unref(self->pa_context);
         pa_threaded_mainloop_free(self->pa_mainloop);
-        return 0;
+        return 3;
     }
     pa_threaded_mainloop_lock(self->pa_mainloop);
     if (pa_threaded_mainloop_start(self->pa_mainloop) < 0)
@@ -111,7 +111,7 @@ hdhome_run_pa_init(const char* name)
         LLOGLN(0, ("hdhome_run_pa_init: pa_threaded_mainloop_start failed"));
         pa_threaded_mainloop_unlock(self->pa_mainloop);
         /* todo: cleanup */
-        return 0;
+        return 4;
     }
     while (1)
     {
@@ -126,12 +126,13 @@ hdhome_run_pa_init(const char* name)
                    pa_context_errno(self->pa_context)));
             pa_threaded_mainloop_unlock(self->pa_mainloop);
             /* todo: cleanup */
-            return 0;
+            return 5;
         }
         pa_threaded_mainloop_wait(self->pa_mainloop);
     }
     pa_threaded_mainloop_unlock(self->pa_mainloop);
-    return self;
+    *handle = self;
+    return 0;
 }
 
 /******************************************************************************/

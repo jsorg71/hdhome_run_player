@@ -214,7 +214,8 @@ hdhome_run_x11_show_buffer(int width, int height, int format,
 
 /*****************************************************************************/
 int
-hdhome_run_x11_main_loop(int* sck, tmlcb* cb, int count, void* udata)
+hdhome_run_x11_main_loop(int* sck, tmlcb* cb, int count, void* udata,
+                         int term_fd)
 {
     XEvent evt;
     fd_set rfds_set;
@@ -227,13 +228,18 @@ hdhome_run_x11_main_loop(int* sck, tmlcb* cb, int count, void* udata)
     struct timeval time;
 
     LLOGLN(0, ("hdhome_run_x11_main_loop:"));
-    mstimeout = 32;
+    mstimeout = 100;
     error = 0;
     cont = 1;
     while (cont)
     {
         max_fd = 0;
         FD_ZERO(&rfds_set);
+        FD_SET(term_fd, &rfds_set);
+        if (term_fd > max_fd)
+        {
+            max_fd = term_fd;
+        }
         FD_SET(g_disp_fd, &rfds_set);
         if (g_disp_fd > max_fd)
         {
@@ -252,6 +258,12 @@ hdhome_run_x11_main_loop(int* sck, tmlcb* cb, int count, void* udata)
         status = select(max_fd + 1, &rfds_set, NULL, NULL, &time);
         if (status >= 0)
         {
+            if (FD_ISSET(term_fd, &rfds_set))
+            {
+                cont = 0;
+                error = 1;
+                break;
+            }
             for (index = 0; index < count; index++)
             {
                 error = (cb[index])(sck[index], udata);

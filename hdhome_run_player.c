@@ -53,20 +53,10 @@ struct video_info
     char* frame_data;
     int frame_data_bytes;
     int frame_data_pos;
-    int continuity_counter;
-    int pad1;
     struct list* frame_list;
     int frame_delay;
     int pad2;
     void* mpeg2_handle;
-    int last_mstime;
-    int frame_lo;
-    int frame_hi;
-    int time_flags;
-    int time_point;
-    int time_count;
-    int fps;
-    int pad3;
 };
 
 struct audio_info
@@ -77,8 +67,6 @@ struct audio_info
     char* frame_data;
     int frame_data_bytes;
     int frame_data_pos;
-    int continuity_counter;
-    int pad1;
     void* ac3_handle;
     void* pa_handle;
     struct list* audio_delay_list;
@@ -92,8 +80,6 @@ struct program_info
     char* frame_data;
     int frame_data_bytes;
     int frame_data_pos;
-    int continuity_counter;
-    int pad1;
 };
 
 struct zero_info
@@ -104,8 +90,6 @@ struct zero_info
     char* frame_data;
     int frame_data_bytes;
     int frame_data_pos;
-    int continuity_counter;
-    int pad1;
 };
 
 struct video_audio_info
@@ -119,11 +103,14 @@ struct video_audio_info
     int main_to_worker_video_pipe[2];
     int worker_to_main_video_pipe[2];
     int main_to_worker_audio_pipe[2];
-    int term_pipe[2];
     pthread_mutex_t mutex;
     struct list* main_to_worker_video_list;
     struct list* worker_to_main_video_list;
     struct list* main_to_worker_audio_list;
+    int got_cdiff;
+    int cdiff;
+    int last_video_dts;
+    int last_audio_dts;
 };
 
 struct mlcb_info
@@ -131,6 +118,7 @@ struct mlcb_info
     struct hdhomerun_device_t* hdhr;
     struct tmpegts_cb* cb;
     struct video_audio_info* vai;
+    int term_pipe[2];
 };
 
 struct main_to_worker_video_item
@@ -460,10 +448,10 @@ video_thread_proc(void* arg)
     {
         max_fd = 0;
         FD_ZERO(&rfds_set);
-        FD_SET(mlcbi->vai->term_pipe[0], &rfds_set);
-        if (mlcbi->vai->term_pipe[0] > max_fd)
+        FD_SET(mlcbi->term_pipe[0], &rfds_set);
+        if (mlcbi->term_pipe[0] > max_fd)
         {
-            max_fd = mlcbi->vai->term_pipe[0];
+            max_fd = mlcbi->term_pipe[0];
         }
         FD_SET(mlcbi->vai->main_to_worker_video_pipe[0], &rfds_set);
         if (mlcbi->vai->main_to_worker_video_pipe[0] > max_fd)
@@ -475,7 +463,7 @@ video_thread_proc(void* arg)
         status = select(max_fd + 1, &rfds_set, NULL, NULL, &time);
         if (status >= 0)
         {
-            if (FD_ISSET(mlcbi->vai->term_pipe[0], &rfds_set))
+            if (FD_ISSET(mlcbi->term_pipe[0], &rfds_set))
             {
                 cont = 0;
                 break;
@@ -552,8 +540,9 @@ decode_and_present_audio(struct video_audio_info* vai,
                 {
                     if (ai->pa_handle == NULL)
                     {
-                        ai->pa_handle = hdhome_run_pa_init("hdhome_run_player");
-                        if (ai->pa_handle != NULL)
+                        error = hdhome_run_pa_init("hdhome_run_player",
+                                                   &(ai->pa_handle));
+                        if (error == 0)
                         {
                             switch (channels)
                             {
@@ -623,10 +612,10 @@ audio_thread_proc(void* arg)
     {
         max_fd = 0;
         FD_ZERO(&rfds_set);
-        FD_SET(mlcbi->vai->term_pipe[0], &rfds_set);
-        if (mlcbi->vai->term_pipe[0] > max_fd)
+        FD_SET(mlcbi->term_pipe[0], &rfds_set);
+        if (mlcbi->term_pipe[0] > max_fd)
         {
-            max_fd = mlcbi->vai->term_pipe[0];
+            max_fd = mlcbi->term_pipe[0];
         }
         FD_SET(mlcbi->vai->main_to_worker_audio_pipe[0], &rfds_set);
         if (mlcbi->vai->main_to_worker_audio_pipe[0] > max_fd)
@@ -636,7 +625,7 @@ audio_thread_proc(void* arg)
         status = select(max_fd + 1, &rfds_set, NULL, NULL, NULL);
         if (status >= 0)
         {
-            if (FD_ISSET(mlcbi->vai->term_pipe[0], &rfds_set))
+            if (FD_ISSET(mlcbi->term_pipe[0], &rfds_set))
             {
                 cont = 0;
                 break;
@@ -657,6 +646,80 @@ audio_thread_proc(void* arg)
 }
 
 /*****************************************************************************/
+static int
+read_time(const void* ptr, int* time)
+{
+    long long i64;
+    long long j64;
+    const unsigned char* pui8;
+
+    pui8 = (const unsigned char*) ptr;
+    i64 = pui8[0];
+    i64 <<= 8;
+    i64 |= pui8[1];
+    i64 <<= 8;
+    i64 |= pui8[2];
+    i64 <<= 8;
+    i64 |= pui8[3];
+    i64 <<= 8;
+    i64 |= pui8[4];
+    j64 = ((i64 & 0x0000000E00000000) >> 3) |
+          ((i64 & 0x00000000FF000000) >> 2) |
+          ((i64 & 0x0000000000FE0000) >> 2) |
+          ((i64 & 0x000000000000FF00) >> 1) |
+          ((i64 & 0x00000000000000FE) >> 1);
+    *time = (j64 + 45) / 90;
+    return 0;
+}
+
+/*****************************************************************************/
+static int
+read_pts_dts(const void* ptr, int* pts, int* dts)
+{
+    const unsigned char* pui8;
+
+    pui8 = (const unsigned char*) ptr;
+    if ((pui8[7] & 0xc0) == 0xc0)
+    {
+        LLOGLN(10, ("read_pts_dts: got pts/dts"));
+        read_time(pui8 + 9, pts);
+        read_time(pui8 + 9 + 5, dts);
+    }
+    else if ((pui8[7] & 0x80) == 0x80)
+    {
+        LLOGLN(10, ("read_pts_dts: got pts"));
+        read_time(pui8 + 9, pts);
+        *dts = *pts;
+    }
+    else
+    {
+        return 1;
+    }
+    return 0;
+}
+
+/*****************************************************************************/
+static int
+read_pcr(const void* ptr, int* pcr)
+{
+    const unsigned char* pui8;
+    long long pcr_time;
+
+    pui8 = (const unsigned char*) ptr;
+    pcr_time = pui8[0];
+    pcr_time <<= 8;
+    pcr_time |= pui8[1];
+    pcr_time <<= 8;
+    pcr_time |= pui8[2];
+    pcr_time <<= 8;
+    pcr_time |= pui8[3];
+    pcr_time <<= 1;
+    pcr_time |= ((pui8[4] & 0x80) >> 7);
+    *pcr = (pcr_time + 45) / 90;
+    return 0;
+}
+
+/*****************************************************************************/
 int
 tmpegts_video_cb(const void* data, int data_bytes,
                  const struct tmpegts* mpegts, void* udata)
@@ -669,39 +732,56 @@ tmpegts_video_cb(const void* data, int data_bytes,
     unsigned char* cdata;
     int cdata_bytes;
     int now;
-    int diff;
+    int lnow;
     struct main_to_worker_video_item* mtwvi;
+    int pts;
+    int dts;
+    int pcr;
 
     rv = 0;
     mlcbi = (struct mlcb_info*)udata;
     vai = mlcbi->vai;
     vi = vai->vi;
+
+    if (mpegts->pcr_flag)
+    {
+        /* 33 bit time */
+        if (read_pcr(mpegts->pcr, &pcr) == 0)
+        {
+            if (vai->got_cdiff == 0)
+            {
+                /* get the difference between our clock and
+                   server clock */
+                LLOGLN(0, ("tmpegts_video_cb: update clock diff"));
+                vai->got_cdiff = 1;
+                now = get_mstime();
+                vai->cdiff = (pcr - now) + 500;
+            }
+        }
+    }
+
     if (mpegts->payload_unit_start_indicator)
     {
         if (vi->frame_data_pos > 0)
         {
+            //hex_dump(vi->frame_data, 128);
             now = get_mstime();
-            if (vi->time_flags == 0)
+            if (vai->got_cdiff == 0)
             {
-                vi->time_flags = 1;
-                vi->time_point = now;
-                vi->time_count = 0;
+                lnow = now;
+            }
+            else if (read_pts_dts(vi->frame_data, &pts, &dts) == 0)
+            {
+                LLOGLN(10, ("tmpegts_video_cb: pts %d dts %d", pts, dts));
+                vai->last_video_dts = dts;
+                lnow = dts - vai->cdiff;
             }
             else
             {
-                vi->time_count++;
-                if (now - vi->time_point > MSTIME_HISTORY)
-                {
-                    vi->fps = (vi->time_count + 2) / 4;
-                    vi->frame_lo = (1000 / vi->fps) - 2;
-                    vi->frame_hi = (1000 / vi->fps) + 2;
-                    LLOGLN(10, ("tmpegts_video_cb: fps %d frame_lo %d "
-                           "frame_hi %d",
-                           vi->fps, vi->frame_lo, vi->frame_hi));
-                    vi->time_point = now;
-                    vi->time_count = 0;
-                }
+                LLOGLN(0, ("tmpegts_video_cb: read_pts_dts failed"));
+                lnow = now;
             }
+            LLOGLN(10, ("tmpegts_video_cb: now - lnow = %d", now - lnow));
             /* https://en.wikipedia.org/wiki/Packetized_elementary_stream */
             remainder = (unsigned char)(vi->frame_data[8]);
             cdata = (unsigned char*)(vi->frame_data + (9 + remainder));
@@ -711,20 +791,7 @@ tmpegts_video_cb(const void* data, int data_bytes,
             mtwvi->data = (unsigned char*)malloc(cdata_bytes);
             memcpy(mtwvi->data, cdata, cdata_bytes);
             mtwvi->data_bytes = cdata_bytes;
-            mtwvi->mstime = now + vai->audio_latency + HD_AUDIO_MSDELAY + 100;
-            if (vi->fps > 0)
-            {
-                diff = mtwvi->mstime - vi->last_mstime;
-                if (diff < vi->frame_lo)
-                {
-                    mtwvi->mstime = vi->last_mstime + vi->frame_lo;
-                }
-                if (diff > vi->frame_hi)
-                {
-                    mtwvi->mstime = vi->last_mstime + vi->frame_hi;
-                }
-            }
-            vi->last_mstime = mtwvi->mstime;
+            mtwvi->mstime = lnow + vai->audio_latency + HD_AUDIO_MSDELAY;
             add_main_to_worker_video_item(vai, mtwvi);
             pipe_set(vai->main_to_worker_video_pipe);
             vi->frame_data_pos = 0;
@@ -736,20 +803,6 @@ tmpegts_video_cb(const void* data, int data_bytes,
     {
         memcpy(vi->frame_data + vi->frame_data_pos, data, data_bytes);
         vi->frame_data_pos += data_bytes;
-    }
-
-    if (vi->continuity_counter == -1)
-    {
-        vi->continuity_counter = mpegts->continuity_counter;
-    }
-    if (vi->continuity_counter != mpegts->continuity_counter)
-    {
-        vi->continuity_counter = mpegts->continuity_counter;
-    }
-    vi->continuity_counter++;
-    if (vi->continuity_counter > 15)
-    {
-        vi->continuity_counter = 0;
     }
     return rv;
 }
@@ -767,6 +820,8 @@ tmpegts_audio_cb(const void* data, int data_bytes,
     unsigned char* cdata;
     int cdata_bytes;
     struct main_to_worker_audio_item* mtwai;
+    int pts;
+    int dts;
 
     rv = 0;
     mlcbi = (struct mlcb_info*)udata;
@@ -776,6 +831,16 @@ tmpegts_audio_cb(const void* data, int data_bytes,
     {
         if (ai->frame_data_pos > 0)
         {
+            //hex_dump(ai->frame_data, 128);
+            if (read_pts_dts(ai->frame_data, &pts, &dts) == 0)
+            {
+                LLOGLN(10, ("tmpegts_audio_cb: pts %d dts %d", pts, dts));
+                vai->last_audio_dts = dts;
+            }
+            else
+            {
+                LLOGLN(0, ("tmpegts_audio_cb: read_pts_dts failed"));
+            }
             /* https://en.wikipedia.org/wiki/Packetized_elementary_stream */
             remainder = (unsigned char)(ai->frame_data[8]);
             cdata = (unsigned char*)(ai->frame_data + (9 + remainder));
@@ -796,20 +861,6 @@ tmpegts_audio_cb(const void* data, int data_bytes,
     {
         memcpy(ai->frame_data + ai->frame_data_pos, data, data_bytes);
         ai->frame_data_pos += data_bytes;
-    }
-
-    if (ai->continuity_counter == -1)
-    {
-        ai->continuity_counter = mpegts->continuity_counter;
-    }
-    if (ai->continuity_counter != mpegts->continuity_counter)
-    {
-        ai->continuity_counter = mpegts->continuity_counter;
-    }
-    ai->continuity_counter++;
-    if (ai->continuity_counter > 15)
-    {
-        ai->continuity_counter = 0;
     }
     return rv;
 }
@@ -850,19 +901,6 @@ tmpegts_program_cb(const void* data, int data_bytes,
         memcpy(pi->frame_data + pi->frame_data_pos, data, data_bytes);
         pi->frame_data_pos += data_bytes;
     }
-    if (pi->continuity_counter == -1)
-    {
-        pi->continuity_counter = mpegts->continuity_counter;
-    }
-    if (pi->continuity_counter != mpegts->continuity_counter)
-    {
-        pi->continuity_counter = mpegts->continuity_counter;
-    }
-    pi->continuity_counter++;
-    if (pi->continuity_counter > 15)
-    {
-        pi->continuity_counter = 0;
-    }
     return 0;
 }
 
@@ -898,19 +936,6 @@ tmpegts_zero_cb(const void* data, int data_bytes,
     {
         memcpy(zi->frame_data + zi->frame_data_pos, data, data_bytes);
         zi->frame_data_pos += data_bytes;
-    }
-    if (zi->continuity_counter == -1)
-    {
-        zi->continuity_counter = mpegts->continuity_counter;
-    }
-    if (zi->continuity_counter != mpegts->continuity_counter)
-    {
-        zi->continuity_counter = mpegts->continuity_counter;
-    }
-    zi->continuity_counter++;
-    if (zi->continuity_counter > 15)
-    {
-        zi->continuity_counter = 0;
     }
     return 0;
 }
@@ -1019,14 +1044,12 @@ main(int argc, char** argv)
     vi.frame_data_bytes = 1024 * 1024;
     vi.frame_data_alloc = (char*)malloc(vi.frame_data_bytes + 16);
     vi.frame_data = (char*)((((long)vi.frame_data_alloc) + 15) & ~15);
-    vi.continuity_counter = -1;
     vi.frame_list = list_create();
 
     memset(&ai, 0, sizeof(ai));
     ai.frame_data_bytes = 1024 * 1024;
     ai.frame_data_alloc = (char*)malloc(ai.frame_data_bytes + 16);
     ai.frame_data = (char*)((((long)ai.frame_data_alloc) + 15) & ~15);
-    ai.continuity_counter = -1;
     ai.audio_delay_list = list_create();
     ai.audio_delay_list->auto_free = 1;
 
@@ -1034,13 +1057,11 @@ main(int argc, char** argv)
     pi.frame_data_bytes = 1024 * 1024;
     pi.frame_data_alloc = (char*)malloc(pi.frame_data_bytes + 16);
     pi.frame_data = (char*)((((long)pi.frame_data_alloc) + 15) & ~15);
-    pi.continuity_counter = -1;
 
     memset(&zi, 0, sizeof(zi));
     zi.frame_data_bytes = 1024 * 1024;
     zi.frame_data_alloc = (char*)malloc(zi.frame_data_bytes + 16);
     zi.frame_data = (char*)((((long)zi.frame_data_alloc) + 15) & ~15);
-    zi.continuity_counter = -1;
 
     memset(&cb, 0, sizeof(cb));
     cb.pids[0] = 0x00;
@@ -1055,7 +1076,6 @@ main(int argc, char** argv)
     pipe(vai.main_to_worker_video_pipe);
     pipe(vai.worker_to_main_video_pipe);
     pipe(vai.main_to_worker_audio_pipe);
-    pipe(vai.term_pipe);
     pthread_mutex_init(&(vai.mutex), 0);
     vai.main_to_worker_video_list = list_create();
     vai.worker_to_main_video_list = list_create();
@@ -1100,6 +1120,7 @@ main(int argc, char** argv)
             mlcbi.hdhr = hdhr;
             mlcbi.cb = &cb;
             mlcbi.vai = &vai;
+            pipe(mlcbi.term_pipe);
             scks[0] = hdhr_sck;
             mlcbs[0] = hdhome_run_callback;
             scks[1] = vai.worker_to_main_video_pipe[0];
@@ -1110,7 +1131,8 @@ main(int argc, char** argv)
             thread = 0;
             pthread_create(&thread, 0, audio_thread_proc, &mlcbi);
             pthread_detach(thread);
-            hdhome_run_x11_main_loop(scks, mlcbs, 2, &mlcbi);
+            hdhome_run_x11_main_loop(scks, mlcbs, 2, &mlcbi,
+                                     mlcbi.term_pipe[0]);
         }
         hdhomerun_device_destroy(hdhr);
     }
