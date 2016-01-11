@@ -649,26 +649,20 @@ audio_thread_proc(void* arg)
 static int
 read_time(const void* ptr, int* time)
 {
-    long long i64;
-    long long j64;
     const unsigned char* pui8;
+    unsigned int t1;
 
     pui8 = (const unsigned char*) ptr;
-    i64 = pui8[0];
-    i64 <<= 8;
-    i64 |= pui8[1];
-    i64 <<= 8;
-    i64 |= pui8[2];
-    i64 <<= 8;
-    i64 |= pui8[3];
-    i64 <<= 8;
-    i64 |= pui8[4];
-    j64 = ((i64 & 0x0000000E00000000) >> 3) |
-          ((i64 & 0x00000000FF000000) >> 2) |
-          ((i64 & 0x0000000000FE0000) >> 2) |
-          ((i64 & 0x000000000000FF00) >> 1) |
-          ((i64 & 0x00000000000000FE) >> 1);
-    *time = (j64 + 45) / 90;
+    /* 11100000 00000000 00000000 00000000 3 bits */
+    /* 00011111 11100000 00000000 00000000 8 bits */
+    /* 00000000 00011111 11000000 00000000 7 bits */
+    /* 00000000 00000000 00111111 11000000 8 bits */
+    /* 00000000 00000000 00000000 00111111 6 bits */
+    t1 = ((pui8[0] & 0x0E) << 28) | ((pui8[1] & 0xFF) << 21) |
+         ((pui8[2] & 0xFE) << 13) | ((pui8[3] & 0xFF) <<  6) |
+         ((pui8[4] & 0xFE) >>  2);
+    t1 = t1 / 45;
+    *time = t1;
     return 0;
 }
 
@@ -703,19 +697,12 @@ static int
 read_pcr(const void* ptr, int* pcr)
 {
     const unsigned char* pui8;
-    long long pcr_time;
+    unsigned int t1;
 
     pui8 = (const unsigned char*) ptr;
-    pcr_time = pui8[0];
-    pcr_time <<= 8;
-    pcr_time |= pui8[1];
-    pcr_time <<= 8;
-    pcr_time |= pui8[2];
-    pcr_time <<= 8;
-    pcr_time |= pui8[3];
-    pcr_time <<= 1;
-    pcr_time |= ((pui8[4] & 0x80) >> 7);
-    *pcr = (pcr_time + 45) / 90;
+    t1 = (pui8[0] << 24) | (pui8[1] << 16) | (pui8[2] << 8) | pui8[3];
+    t1 = t1 / 45;
+    *pcr = t1;
     return 0;
 }
 
@@ -737,6 +724,7 @@ tmpegts_video_cb(const void* data, int data_bytes,
     int pts;
     int dts;
     int pcr;
+    int cdiff;
 
     rv = 0;
     mlcbi = (struct mlcb_info*)udata;
@@ -748,15 +736,14 @@ tmpegts_video_cb(const void* data, int data_bytes,
         /* 33 bit time */
         if (read_pcr(mpegts->pcr, &pcr) == 0)
         {
-            if (vai->got_cdiff == 0)
-            {
-                /* get the difference between our clock and
-                   server clock */
-                LLOGLN(0, ("tmpegts_video_cb: update clock diff"));
-                vai->got_cdiff = 1;
-                now = get_mstime();
-                vai->cdiff = (pcr - now) + 500;
-            }
+            /* get the difference between our clock and
+               server clock */
+            LLOGLN(10, ("tmpegts_video_cb: update clock diff"));
+            vai->got_cdiff = 1;
+            now = get_mstime();
+            cdiff = (pcr - now) + 500;
+            vai->cdiff = cdiff;
+            LLOGLN(10, ("tmpegts_video_cb: update clock diff %d", vai->cdiff));
         }
     }
 

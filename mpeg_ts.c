@@ -88,18 +88,22 @@ process_mpeg_ts_packet(const void* data, int bytes,
     data8_end = data8 + bytes;
     header = (data8[0] << 24) | (data8[1] << 16) | (data8[2] << 8) | data8[3];
     data8 += 4;
-    mpegts.sync_byte = (header & 0xff000000) >> 24;
-    mpegts.transport_error_indicator = (header & 0x800000) != 0;
-    mpegts.payload_unit_start_indicator = (header & 0x400000) != 0;
-    mpegts.transport_priority = (header & 0x200000) != 0;
-    mpegts.pid = (header & 0x1fff00) >> 8;
-    mpegts.scrambling_control = (header & 0xc0) >> 6;
-    mpegts.adaptation_field_flag = (header & 0x20) != 0;
-    mpegts.payload_flag = (header & 0x10) != 0;
-    mpegts.continuity_counter = header & 0xf;
+    mpegts.sync_byte                    = (header & 0xff000000) >> 24;
+    mpegts.transport_error_indicator    = (header & 0x00800000) >> 23;
+    mpegts.payload_unit_start_indicator = (header & 0x00400000) >> 22;
+    mpegts.transport_priority           = (header & 0x00200000) >> 21;
+    mpegts.pid                          = (header & 0x001fff00) >> 8;
+    mpegts.scrambling_control           = (header & 0x000000c0) >> 6;
+    mpegts.adaptation_field_flag        = (header & 0x00000020) >> 5;
+    mpegts.payload_flag                 = (header & 0x00000010) >> 4;
+    mpegts.continuity_counter           = (header & 0x0000000f) >> 0;
     if (mpegts.sync_byte != 0x47)
     {
         /* must be parse error */
+        return 1;
+    }
+    if (mpegts.transport_error_indicator)
+    {
         return 1;
     }
     if (mpegts.scrambling_control != 0)
@@ -107,20 +111,20 @@ process_mpeg_ts_packet(const void* data, int bytes,
         /* not supported */
         return 1;
     }
-    if (mpegts.adaptation_field_flag)
+    if (mpegts.adaptation_field_flag && (data8[0] > 0))
     {
         mpegts.adaptation_field_length = data8[0];
         data8++;
         header = data8[0];
         data8 += mpegts.adaptation_field_length;
-        mpegts.discontinuity_indicator = (header & 0x80) != 0;
-        mpegts.random_access_indicator = (header & 0x40) != 0;
-        mpegts.elementary_stream_priority_indicator = (header & 0x20) != 0;
-        mpegts.pcr_flag = (header & 0x10) != 0;
-        mpegts.opcr_flag = (header & 0x08) != 0;
-        mpegts.splicing_point_flag = (header & 0x04) != 0;
-        mpegts.transport_private_data_flag = (header & 0x02) != 0;
-        mpegts.adaptation_field_extension_flag = (header & 0x01) != 0;
+        mpegts.discontinuity_indicator              = (header & 0x80) >> 7;
+        mpegts.random_access_indicator              = (header & 0x40) >> 6;
+        mpegts.elementary_stream_priority_indicator = (header & 0x20) >> 5;
+        mpegts.pcr_flag                             = (header & 0x10) >> 4;
+        mpegts.opcr_flag                            = (header & 0x08) >> 3;
+        mpegts.splicing_point_flag                  = (header & 0x04) >> 2;
+        mpegts.transport_private_data_flag          = (header & 0x02) >> 1;
+        mpegts.adaptation_field_extension_flag      = (header & 0x01) >> 0;
         if (mpegts.random_access_indicator)
         {
             //printf("random_access_indicator set\n");
@@ -153,6 +157,11 @@ process_mpeg_ts_packet(const void* data, int bytes,
 
     //printf("pid 0x%4.4x\n", mpegts.pid);
     cb_bytes = (int) (data8_end - data8);
+    if (cb_bytes < 0)
+    {
+        // check why this happens
+        cb_bytes = 0;
+    }
     if (cb != 0)
     {
         index = 0;
