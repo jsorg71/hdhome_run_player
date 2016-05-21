@@ -1,7 +1,7 @@
 /**
  * hdhome_run_player
  *
- * Copyright 2015 Jay Sorg <jay.sorg@gmail.com>
+ * Copyright 2015-2016 Jay Sorg <jay.sorg@gmail.com>
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -347,6 +347,7 @@ add_main_to_worker_audio_item(struct video_audio_info* vai,
 }
 
 /*****************************************************************************/
+/* video thread */
 static int
 decode_video_and_send_back(struct video_audio_info* vai,
                            struct main_to_worker_video_item* mtwvi)
@@ -416,6 +417,7 @@ decode_video_and_send_back(struct video_audio_info* vai,
 }
 
 /*****************************************************************************/
+/* video thread */
 static int
 video_process_item(struct mlcb_info* mlcbi,
                    struct main_to_worker_video_item* mtwvi)
@@ -430,6 +432,7 @@ video_process_item(struct mlcb_info* mlcbi,
 }
 
 /*****************************************************************************/
+/* video thread */
 static void*
 video_thread_proc(void* arg)
 {
@@ -493,6 +496,7 @@ video_thread_proc(void* arg)
 }
 
 /*****************************************************************************/
+/* audio thread */
 static int
 decode_and_present_audio(struct video_audio_info* vai,
                          struct main_to_worker_audio_item* mtwai)
@@ -593,6 +597,7 @@ decode_and_present_audio(struct video_audio_info* vai,
 }
 
 /*****************************************************************************/
+/* audio thread */
 static int
 audio_process_item(struct mlcb_info* mlcbi,
                    struct main_to_worker_audio_item* mtwai)
@@ -607,6 +612,7 @@ audio_process_item(struct mlcb_info* mlcbi,
 }
 
 /*****************************************************************************/
+/* audio thread */
 static void*
 audio_thread_proc(void* arg)
 {
@@ -719,6 +725,7 @@ read_pcr(const void* ptr, int* pcr)
 }
 
 /*****************************************************************************/
+/* main thread */
 int
 tmpegts_video_cb(const void* data, int data_bytes,
                  const struct tmpegts* mpegts, void* udata)
@@ -811,6 +818,7 @@ tmpegts_video_cb(const void* data, int data_bytes,
 }
 
 /*****************************************************************************/
+/* main thread */
 int
 tmpegts_audio_cb(const void* data, int data_bytes,
                  const struct tmpegts* mpegts, void* udata)
@@ -871,6 +879,7 @@ tmpegts_audio_cb(const void* data, int data_bytes,
 }
 
 /*****************************************************************************/
+/* main thread */
 static int
 tmpegts_program_cb(const void* data, int data_bytes,
                    const struct tmpegts* mpegts, void* udata)
@@ -910,6 +919,7 @@ tmpegts_program_cb(const void* data, int data_bytes,
 }
 
 /*****************************************************************************/
+/* main thread */
 static int
 tmpegts_zero_cb(const void* data, int data_bytes,
                 const struct tmpegts* mpegts, void* udata)
@@ -946,6 +956,7 @@ tmpegts_zero_cb(const void* data, int data_bytes,
 }
 
 /*****************************************************************************/
+/* main thread */
 static int
 hdhome_run_callback(int sck, void* udata)
 {
@@ -982,6 +993,7 @@ hdhome_run_callback(int sck, void* udata)
 }
 
 /*****************************************************************************/
+/* main thread */
 static int
 video_callback(int sck, void* udata)
 {
@@ -1111,6 +1123,7 @@ main(int argc, char** argv)
     }
 
     hdhr = hdhomerun_device_create(HDHOMERUN_DEVICE_ID_WILDCARD, 0, 0, 0);
+    //hdhr = hdhomerun_device_create_from_str("103BF3FB-1", 0);
     if (hdhr != NULL)
     {
         hdhr_vsck = hdhomerun_device_get_video_sock(hdhr);
