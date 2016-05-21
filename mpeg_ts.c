@@ -104,12 +104,12 @@ process_mpeg_ts_packet(const void* data, int bytes,
     }
     if (mpegts.transport_error_indicator)
     {
-        return 1;
+        return 2;
     }
     if (mpegts.scrambling_control != 0)
     {
         /* not supported */
-        return 1;
+        return 3;
     }
     if (mpegts.adaptation_field_flag && (data8[0] > 0))
     {
@@ -157,11 +157,6 @@ process_mpeg_ts_packet(const void* data, int bytes,
 
     //printf("pid 0x%4.4x\n", mpegts.pid);
     cb_bytes = (int) (data8_end - data8);
-    if (cb_bytes < 0)
-    {
-        // check why this happens
-        cb_bytes = 0;
-    }
     if (cb != 0)
     {
         index = 0;
