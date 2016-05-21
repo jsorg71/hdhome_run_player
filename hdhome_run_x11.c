@@ -270,7 +270,7 @@ hdhome_run_x11_main_loop(int* sck, tmlcb* cb, int count, void* udata,
                 if (error != 0)
                 {
                     LLOGLN(0, ("hdhome_run_x11_main_loop: cb failed "
-                           "index %d sck %d\n", index, sck[index]));
+                           "index %d sck %d", index, sck[index]));
                 }
             }
             while (XPending(g_disp) > 0)

@@ -125,7 +125,7 @@ struct main_to_worker_video_item
 {
     unsigned char* data;
     int data_bytes;
-    int mstime;
+    int mstime_dts;
 };
 
 struct worker_to_main_video_item
@@ -143,7 +143,7 @@ struct main_to_worker_audio_item
     int data_bytes;
     int mstime_in;
     int mstime_queued;
-    int pad0;
+    int mstime_dts;
 };
 
 struct average_item
@@ -262,9 +262,12 @@ get_main_to_worker_video_item(struct video_audio_info* vai,
     {
         mtwvi = (struct main_to_worker_video_item*)
                 list_get_item(vai->main_to_worker_video_list, 0);
-        if (mtwvi->mstime > mstime)
+        LLOGLN(10, ("get_main_to_worker_video_item: ms wait time %d",
+               (int)(mtwvi->mstime_dts - mstime)));
+        if ((mtwvi->mstime_dts > mstime) &&
+            (mtwvi->mstime_dts - mstime < 10000))
         {
-            *wait_mstime = mtwvi->mstime - mstime;
+            *wait_mstime = mtwvi->mstime_dts - mstime;
             pthread_mutex_unlock(&(vai->mutex));
             return NULL;
         }
@@ -563,14 +566,23 @@ decode_and_present_audio(struct video_audio_info* vai,
                     }
                     if (ai->pa_handle != NULL)
                     {
+#if 1
                         hdhome_run_pa_play(ai->pa_handle,
                                            out_data, out_data_bytes);
+#else
+                        hdhome_run_pa_play_non_blocking(ai->pa_handle,
+                                                        out_data,
+                                                        out_data_bytes, 0);
+#endif
                         now = get_mstime();
                         mtwai->mstime_queued = now;
-                        diff = mtwai->mstime_queued - mtwai->mstime_in;
+                        diff = now - mtwai->mstime_dts;
                         vai->audio_latency =
                             audio_delay_list_get_average(ai->audio_delay_list,
                                                          now, diff);
+                        LLOGLN(10, ("decode_and_present_audio: "
+                               "audio_latency %d diff %d",
+                               vai->audio_latency, diff));
                     }
                 }
                 free(out_data);
@@ -719,7 +731,7 @@ tmpegts_video_cb(const void* data, int data_bytes,
     unsigned char* cdata;
     int cdata_bytes;
     int now;
-    int lnow;
+    int mstime_dts;
     struct main_to_worker_video_item* mtwvi;
     int pts;
     int dts;
@@ -733,6 +745,7 @@ tmpegts_video_cb(const void* data, int data_bytes,
 
     if (mpegts->pcr_flag)
     {
+        LLOGLN(10, ("tmpegts_video_cb: got pcr_flag"));
         /* 33 bit time */
         if (read_pcr(mpegts->pcr, &pcr) == 0)
         {
@@ -741,7 +754,7 @@ tmpegts_video_cb(const void* data, int data_bytes,
             LLOGLN(10, ("tmpegts_video_cb: update clock diff"));
             vai->got_cdiff = 1;
             now = get_mstime();
-            cdiff = (pcr - now) + 500;
+            cdiff = pcr - now;
             vai->cdiff = cdiff;
             LLOGLN(10, ("tmpegts_video_cb: update clock diff %d", vai->cdiff));
         }
@@ -755,20 +768,20 @@ tmpegts_video_cb(const void* data, int data_bytes,
             now = get_mstime();
             if (vai->got_cdiff == 0)
             {
-                lnow = now;
+                mstime_dts = now;
             }
             else if (read_pts_dts(vi->frame_data, &pts, &dts) == 0)
             {
                 LLOGLN(10, ("tmpegts_video_cb: pts %d dts %d", pts, dts));
                 vai->last_video_dts = dts;
-                lnow = dts - vai->cdiff;
+                mstime_dts = dts - vai->cdiff;
             }
             else
             {
                 LLOGLN(0, ("tmpegts_video_cb: read_pts_dts failed"));
-                lnow = now;
+                mstime_dts = now;
             }
-            LLOGLN(10, ("tmpegts_video_cb: now - lnow = %d", now - lnow));
+            LLOGLN(10, ("tmpegts_video_cb: now - mstime_dts = %d", now - mstime_dts));
             /* https://en.wikipedia.org/wiki/Packetized_elementary_stream */
             remainder = (unsigned char)(vi->frame_data[8]);
             cdata = (unsigned char*)(vi->frame_data + (9 + remainder));
@@ -778,7 +791,10 @@ tmpegts_video_cb(const void* data, int data_bytes,
             mtwvi->data = (unsigned char*)malloc(cdata_bytes);
             memcpy(mtwvi->data, cdata, cdata_bytes);
             mtwvi->data_bytes = cdata_bytes;
-            mtwvi->mstime = lnow + vai->audio_latency + HD_AUDIO_MSDELAY;
+            LLOGLN(10, ("tmpegts_video_cb: audio_latency %d",
+                   vai->audio_latency));
+            mtwvi->mstime_dts = mstime_dts + vai->audio_latency +
+                                HD_AUDIO_MSDELAY - 500;
             add_main_to_worker_video_item(vai, mtwvi);
             pipe_set(vai->main_to_worker_video_pipe);
             vi->frame_data_pos = 0;
@@ -814,6 +830,7 @@ tmpegts_audio_cb(const void* data, int data_bytes,
     mlcbi = (struct mlcb_info*)udata;
     vai = mlcbi->vai;
     ai = vai->ai;
+    
     if (mpegts->payload_unit_start_indicator)
     {
         if (ai->frame_data_pos > 0)
@@ -838,6 +855,7 @@ tmpegts_audio_cb(const void* data, int data_bytes,
             memcpy(mtwai->data, cdata, cdata_bytes);
             mtwai->data_bytes = cdata_bytes;
             mtwai->mstime_in = get_mstime();
+            mtwai->mstime_dts = vai->last_audio_dts - vai->cdiff;
             add_main_to_worker_audio_item(vai, mtwai);
             pipe_set(vai->main_to_worker_audio_pipe);
             ai->frame_data_pos = 0;
