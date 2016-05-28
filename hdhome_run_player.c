@@ -1134,9 +1134,21 @@ main(int argc, char** argv)
     vai.ai = &ai;
     vai.pi = &pi;
     vai.zi = &zi;
-    pipe(vai.main_to_worker_video_pipe);
-    pipe(vai.worker_to_main_video_pipe);
-    pipe(vai.main_to_worker_audio_pipe);
+    if (pipe(vai.main_to_worker_video_pipe) != 0)
+    {
+        LLOGLN(0, ("pipe failed"));
+        return 1;
+    }
+    if (pipe(vai.worker_to_main_video_pipe) != 0)
+    {
+        LLOGLN(0, ("pipe failed"));
+        return 1;
+    }
+    if (pipe(vai.main_to_worker_audio_pipe) != 0)
+    {
+        LLOGLN(0, ("pipe failed"));
+        return 1;
+    }
     pthread_mutex_init(&(vai.mutex), 0);
     vai.main_to_worker_video_list = list_create();
     vai.worker_to_main_video_list = list_create();
@@ -1167,6 +1179,7 @@ main(int argc, char** argv)
     }
 
     hdhr = hdhomerun_device_create(HDHOMERUN_DEVICE_ID_WILDCARD, 0, 0, 0);
+    //hdhr = hdhomerun_device_create(HDHOMERUN_DEVICE_ID_WILDCARD, 0x0a00000b, 0, 0);
     //hdhr = hdhomerun_device_create_from_str("103BF3FB-1", 0);
     if (hdhr != NULL)
     {

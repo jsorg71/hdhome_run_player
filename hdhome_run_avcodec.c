@@ -27,12 +27,12 @@
 #warning LIBAVCODEC_VERSION_MAJOR not defined
 #endif
 
-// LIBAVCODEC_VERSION_MAJOR 52 ubuntu 10.04
-// LIBAVCODEC_VERSION_MAJOR 52 debian 6
-// LIBAVCODEC_VERSION_MAJOR 53 debian 7
-// LIBAVCODEC_VERSION_MAJOR 54 ubuntu 14.04
-// LIBAVCODEC_VERSION_MAJOR 56 debian 8
-// LIBAVCODEC_VERSION_MAJOR 56 ubuntu 15.10
+// LIBAVCODEC_VERSION_MAJOR 52                             ubuntu 10.04
+// LIBAVCODEC_VERSION_MAJOR 52 LIBAVCODEC_VERSION_MINOR 20 debian 6
+// LIBAVCODEC_VERSION_MAJOR 53 LIBAVCODEC_VERSION_MINOR 35 debian 7
+// LIBAVCODEC_VERSION_MAJOR 54 LIBAVCODEC_VERSION_MINOR 35 ubuntu 14.04
+// LIBAVCODEC_VERSION_MAJOR 56 LIBAVCODEC_VERSION_MINOR 1  debian 8
+// LIBAVCODEC_VERSION_MAJOR 56                             ubuntu 15.10
 
 //example
 //#if (LIBAVCODEC_VERSION_INT <= ((51<<16) + (28<<8) + 0))
@@ -174,12 +174,12 @@ hdhome_run_avcodec_ac3_decode(void* obj, void* cdata, int cdata_bytes,
 
     self = (struct avcodec_ac3*)obj;
     if (self == NULL)
-   {
+    {
         return 1;
     }
     *cdata_bytes_processed = 0;
     *decoded = 0;
-   bytes_processed = 0;
+    bytes_processed = 0;
     src = cdata;
     src_size = cdata_bytes;
     while (src_size > 0)
@@ -190,7 +190,7 @@ hdhome_run_avcodec_ac3_decode(void* obj, void* cdata, int cdata_bytes,
         len = avcodec_decode_audio2(self->codec_context,
                                     self->dst, &(self->dst_bytes),
                                     src, src_size);
-       *decoded = self->dst_bytes > 0;
+        *decoded = self->dst_bytes > 0;
         if (len < 0)
         {
             return 1;
