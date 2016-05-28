@@ -62,13 +62,13 @@
 #define AVCODEC_FREE_FRAME(_frame)  av_free(*(_frame));
 #endif
 
-#if 0
+#if LIBAVCODEC_VERSION_MAJOR < 52 || (LIBAVCODEC_VERSION_MAJOR == 52 && LIBAVCODEC_VERSION_MINOR <= 20)
 #define AVCODEC_ALLOC_CONTEXT avcodec_alloc_context()
 #else
 #define AVCODEC_ALLOC_CONTEXT avcodec_alloc_context3(NULL)
 #endif
 
-#if 0
+#if LIBAVCODEC_VERSION_MAJOR < 52 || (LIBAVCODEC_VERSION_MAJOR == 52 && LIBAVCODEC_VERSION_MINOR <= 20)
 #define AVCODEC_OPEN(_context, _codec) avcodec_open(_context, _codec)
 #else
 #define AVCODEC_OPEN(_context, _codec) avcodec_open2(_context, _codec, NULL)
