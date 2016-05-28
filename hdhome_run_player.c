@@ -1195,7 +1195,11 @@ main(int argc, char** argv)
             mlcbi.hdhr = hdhr;
             mlcbi.cb = &cb;
             mlcbi.vai = &vai;
-            pipe(mlcbi.term_pipe);
+            if (pipe(mlcbi.term_pipe) != 0)
+            {
+                LLOGLN(0, ("pipe failed"));
+                return 1;
+            }
             scks[0] = hdhr_sck;
             mlcbs[0] = hdhome_run_callback;
             scks[1] = vai.worker_to_main_video_pipe[0];
