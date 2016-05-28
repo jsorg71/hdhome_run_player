@@ -62,11 +62,26 @@
 #define AVCODEC_FREE_FRAME(_frame)  av_free(*(_frame));
 #endif
 
+#if 0
+#define AVCODEC_ALLOC_CONTEXT avcodec_alloc_context()
+#else
+#define AVCODEC_ALLOC_CONTEXT avcodec_alloc_context3(NULL)
+#endif
+
+#if 0
+#define AVCODEC_OPEN(_context, _codec) avcodec_open(_context, _codec)
+#else
+#define AVCODEC_OPEN(_context, _codec) avcodec_open2(_context, _codec, NULL)
+#endif
+
 struct avcodec_ac3
 {
     AVCodecContext* codec_context;
     AVCodec* codec;
     AVFrame* frame;
+    short* dst;
+    int dst_bytes;
+    int pad0;
 };
 
 struct avcodec_mpeg2
@@ -101,7 +116,7 @@ hdhome_run_avcodec_ac3_create(void** obj)
         return 2;
     }
     memset(self, 0, sizeof(struct avcodec_ac3));
-    self->codec_context = avcodec_alloc_context3(NULL);
+    self->codec_context = AVCODEC_ALLOC_CONTEXT;
     if (self->codec_context == NULL)
     {
         free(self);
@@ -114,7 +129,7 @@ hdhome_run_avcodec_ac3_create(void** obj)
         free(self);
         return 4;
     }
-    error = avcodec_open2(self->codec_context, self->codec, NULL);
+    error = AVCODEC_OPEN(self->codec_context, self->codec);
     if (error != 0)
     {
         avcodec_close(self->codec_context);
@@ -142,6 +157,91 @@ hdhome_run_avcodec_ac3_delete(void* obj)
     free(self);
     return 0;
 }
+
+#if LIBAVCODEC_VERSION_MAJOR < 52 || (LIBAVCODEC_VERSION_MAJOR == 52 && LIBAVCODEC_VERSION_MINOR <= 20)
+/* debian 6 */
+
+/*****************************************************************************/
+int
+hdhome_run_avcodec_ac3_decode(void* obj, void* cdata, int cdata_bytes,
+                              int* cdata_bytes_processed, int* decoded)
+{
+    struct avcodec_ac3* self;
+    int len;
+    int bytes_processed;
+    unsigned char* src;
+    int src_size;
+
+    self = (struct avcodec_ac3*)obj;
+    if (self == NULL)
+   {
+        return 1;
+    }
+    *cdata_bytes_processed = 0;
+    *decoded = 0;
+   bytes_processed = 0;
+    src = cdata;
+    src_size = cdata_bytes;
+    while (src_size > 0)
+    {
+        self->dst_bytes = AVCODEC_MAX_AUDIO_FRAME_SIZE;
+        free(self->dst);
+        self->dst = (short*) malloc(self->dst_bytes);
+        len = avcodec_decode_audio2(self->codec_context,
+                                    self->dst, &(self->dst_bytes),
+                                    src, src_size);
+       *decoded = self->dst_bytes > 0;
+        if (len < 0)
+        {
+            return 1;
+        }
+        src_size -= len;
+        src += len;
+        bytes_processed += len;
+        if (*decoded)   
+        {
+            *cdata_bytes_processed = bytes_processed;
+            return 0;
+        }
+    }
+    *cdata_bytes_processed = bytes_processed;
+    return 0;
+}
+
+/*****************************************************************************/
+int
+hdhome_run_avcodec_ac3_get_frame_info(void* obj, int* channels, int* format,
+                                      int* bytes)
+{
+    struct avcodec_ac3* self;
+
+    self = (struct avcodec_ac3*)obj;
+    if (self == NULL)
+    {
+        return 1;
+    }
+    *channels = self->codec_context->channels;
+    *format = 1; /* AV_SAMPLE_FMT_S16 */
+    *bytes = self->dst_bytes;
+    return 0;
+}
+
+/*****************************************************************************/
+int
+hdhome_run_avcodec_ac3_get_frame_data(void* obj, void* data, int data_bytes)
+{
+    struct avcodec_ac3* self;
+
+    self = (struct avcodec_ac3*)obj;
+    if (self == NULL)
+    {
+        return 1;
+    }
+    memcpy(data, self->dst, data_bytes);
+    return 0;
+}
+
+#else
 
 /*****************************************************************************/
 int
@@ -275,6 +375,8 @@ hdhome_run_avcodec_ac3_get_frame_data(void* obj, void* data, int data_bytes)
     return 0;
 }
 
+#endif
+
 /*****************************************************************************/
 int
 hdhome_run_avcodec_mpeg2_create(void** obj)
@@ -292,7 +394,7 @@ hdhome_run_avcodec_mpeg2_create(void** obj)
         return 2;
     }
     memset(self, 0, sizeof(struct avcodec_mpeg2));
-    self->codec_context = avcodec_alloc_context3(NULL);
+    self->codec_context = AVCODEC_ALLOC_CONTEXT;
     if (self->codec_context == NULL)
     {
         free(self);
@@ -305,7 +407,7 @@ hdhome_run_avcodec_mpeg2_create(void** obj)
         free(self);
         return 4;
     }
-    error = avcodec_open2(self->codec_context, self->codec, NULL);
+    error = AVCODEC_OPEN(self->codec_context, self->codec);
     if (error != 0)
     {
         avcodec_close(self->codec_context);
@@ -333,6 +435,54 @@ hdhome_run_avcodec_mpeg2_delete(void* obj)
     free(self);
     return 0;
 }
+
+#if LIBAVCODEC_VERSION_MAJOR < 52 || (LIBAVCODEC_VERSION_MAJOR == 52 && LIBAVCODEC_VERSION_MINOR <= 20)
+/* debian 6 */
+
+/*****************************************************************************/
+int
+hdhome_run_avcodec_mpeg2_decode(void* obj, void* cdata, int cdata_bytes,
+                                int* cdata_bytes_processed, int* decoded)
+{
+    struct avcodec_mpeg2* self;
+    int len;
+    int bytes_processed;
+    unsigned char* src;
+    int src_size;
+
+    self = (struct avcodec_mpeg2*)obj;
+    if (self == NULL)
+    {
+        return 1;
+    }
+    *cdata_bytes_processed = 0;
+    *decoded = 0;
+    bytes_processed = 0;
+    src = cdata;
+    src_size = cdata_bytes;
+    while (src_size > 0)
+    {
+        len = avcodec_decode_video(self->codec_context,
+                                   self->frame,
+                                   decoded, src, src_size);
+        if (len < 0)
+        {
+            return 1;
+        }
+        src_size -= len;
+        src += len;
+        bytes_processed += len;
+        if (*decoded)
+        {
+            *cdata_bytes_processed = bytes_processed;
+            return 0;
+        }
+    }
+    *cdata_bytes_processed = bytes_processed;
+    return 0;
+}
+
+#else
 
 /*****************************************************************************/
 int
@@ -380,6 +530,8 @@ hdhome_run_avcodec_mpeg2_decode(void* obj, void* cdata, int cdata_bytes,
     return 0;
 }
 
+#endif
+
 /*****************************************************************************/
 int
 hdhome_run_avcodec_mpeg2_get_frame_info(void* obj, int* width, int* height,
@@ -393,12 +545,12 @@ hdhome_run_avcodec_mpeg2_get_frame_info(void* obj, int* width, int* height,
     {
         return 1;
     }
-    frame_size = avpicture_get_size(self->frame->format,
-                                    self->frame->width,
-                                    self->frame->height);
+    frame_size = avpicture_get_size(PIX_FMT_YUV420P,
+                                    self->codec_context->width,
+                                    self->codec_context->height);
     *width = self->codec_context->width;
     *height = self->codec_context->height;
-    *format = self->frame->format;
+    *format = PIX_FMT_YUV420P; /* 0 */
     *bytes = frame_size;
     return 0;
 }
@@ -417,14 +569,14 @@ hdhome_run_avcodec_mpeg2_get_frame_data(void* obj, void* data, int data_bytes)
     }
     frame = AVCODEC_ALLOC_FRAME();
     avpicture_fill((AVPicture*)frame, data,
-                   self->frame->format,
-                   self->frame->width,
-                   self->frame->height);
+                   PIX_FMT_YUV420P,
+                   self->codec_context->width,
+                   self->codec_context->height);
     av_picture_copy((AVPicture*)frame,
                     (AVPicture*)(self->frame),
-                    self->frame->format,
-                    self->frame->width,
-                    self->frame->height);
+                    PIX_FMT_YUV420P,
+                    self->codec_context->width,
+                    self->codec_context->height);
     AVCODEC_FREE_FRAME(&frame);
     return 0;
 }
