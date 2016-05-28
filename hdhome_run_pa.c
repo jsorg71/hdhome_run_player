@@ -221,12 +221,21 @@ hdhome_run_pa_start(void* handle, const char* name, int ms_latency, int format)
             memset(&channel_map, 0, sizeof(channel_map));
             channel_map_p = &channel_map;
             channel_map.channels = 6;
+#if 0
+            channel_map.map[0] = PA_CHANNEL_POSITION_FRONT_LEFT;
+            channel_map.map[1] = PA_CHANNEL_POSITION_FRONT_RIGHT;
+            channel_map.map[2] = PA_CHANNEL_POSITION_FRONT_CENTER;
+            channel_map.map[3] = PA_CHANNEL_POSITION_REAR_LEFT;
+            channel_map.map[4] = PA_CHANNEL_POSITION_REAR_RIGHT;
+            channel_map.map[5] = PA_CHANNEL_POSITION_LFE;
+#else
             channel_map.map[0] = PA_CHANNEL_POSITION_FRONT_LEFT;
             channel_map.map[1] = PA_CHANNEL_POSITION_FRONT_RIGHT;
             channel_map.map[2] = PA_CHANNEL_POSITION_FRONT_CENTER;
             channel_map.map[3] = PA_CHANNEL_POSITION_LFE;
             channel_map.map[4] = PA_CHANNEL_POSITION_REAR_LEFT;
             channel_map.map[5] = PA_CHANNEL_POSITION_REAR_RIGHT;
+#endif
             break;
         default:
             return 1;
