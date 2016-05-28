@@ -95,16 +95,18 @@ hdhome_run_x11_init(void)
     XSelectInput(g_disp, g_win, g_eventMask);
     XMaskEvent(g_disp, VisibilityNotify, &evt);
     g_disp_fd = ConnectionNumber(g_disp);
-    ret = XvQueryExtension(g_disp, &version, &release, &request_base, &event_base, &error_base);
+    ret = XvQueryExtension(g_disp, &version, &release, &request_base,
+                           &event_base, &error_base);
     if (ret != Success)
     {
         LLOGLN(0, ("XvQueryExtension failedd"));
     }
     g_xv_event_base = event_base;
-    ret = XvQueryAdaptors(g_disp, DefaultRootWindow(g_disp), &num_adaptors, &ai);
+    ret = XvQueryAdaptors(g_disp, DefaultRootWindow(g_disp), &num_adaptors,
+                          &ai);
     if (ret != Success)
     {
-        LLOGLN(0, ("XvQueryAdaptors failedd"));
+        LLOGLN(0, ("XvQueryAdaptors failed"));
     }
 
     for (index = 0; index < num_adaptors; index++)

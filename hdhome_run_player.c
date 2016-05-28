@@ -48,7 +48,7 @@
 struct video_info
 {
     int started;
-    int pad0;
+    int this_pdu_bytes;
     char* frame_data_alloc;
     char* frame_data;
     int frame_data_bytes;
@@ -62,7 +62,7 @@ struct video_info
 struct audio_info
 {
     int started;
-    int pad0;
+    int this_pdu_bytes;
     char* frame_data_alloc;
     char* frame_data;
     int frame_data_bytes;
@@ -769,6 +769,17 @@ tmpegts_video_cb(const void* data, int data_bytes,
 
     if (mpegts->payload_unit_start_indicator)
     {
+        LLOGLN(10, ("tmpegts_video_cb: start"));
+        //hex_dump(vi->frame_data, 64);
+        vi->this_pdu_bytes = 0;
+        /* https://en.wikipedia.org/wiki/Packetized_elementary_stream */
+        if ((vi->frame_data[0] == 0) && (vi->frame_data[1] == 0) &&
+            (vi->frame_data[2] == 1))
+        {
+            /* for video packet, this is zero */
+            vi->this_pdu_bytes = (vi->frame_data[4] << 8) | vi->frame_data[5];
+            vi->this_pdu_bytes += 6;
+        }
         if (vi->frame_data_pos > 0)
         {
             //hex_dump(vi->frame_data, 128);
@@ -793,6 +804,7 @@ tmpegts_video_cb(const void* data, int data_bytes,
             remainder = (unsigned char)(vi->frame_data[8]);
             cdata = (unsigned char*)(vi->frame_data + (9 + remainder));
             cdata_bytes = vi->frame_data_pos - (9 + remainder);
+            LLOGLN(10, ("cdata_bytes %d", cdata_bytes));
             mtwvi = (struct main_to_worker_video_item*)
                     calloc(sizeof(struct main_to_worker_video_item), 1);
             mtwvi->data = (unsigned char*)malloc(cdata_bytes);
@@ -804,15 +816,16 @@ tmpegts_video_cb(const void* data, int data_bytes,
                                 HD_AUDIO_MSDELAY - 500;
             add_main_to_worker_video_item(vai, mtwvi);
             pipe_set(vai->main_to_worker_video_pipe);
-            vi->frame_data_pos = 0;
         }
+        vi->frame_data_pos = 0;
         vi->started = 1;
     }
-
-    if (vi->started)
+    if (mpegts->payload_flag && vi->started)
     {
         memcpy(vi->frame_data + vi->frame_data_pos, data, data_bytes);
         vi->frame_data_pos += data_bytes;
+        LLOGLN(10, ("vi->frame_data_pos %d vi->this_pdu_bytes %d",
+               vi->frame_data_pos, vi->this_pdu_bytes));
     }
     return rv;
 }
@@ -838,12 +851,27 @@ tmpegts_audio_cb(const void* data, int data_bytes,
     mlcbi = (struct mlcb_info*)udata;
     vai = mlcbi->vai;
     ai = vai->ai;
-    
     if (mpegts->payload_unit_start_indicator)
     {
-        if (ai->frame_data_pos > 0)
+        LLOGLN(10, ("tmpegts_audio_cb: start"));
+        ai->this_pdu_bytes = 0;
+        /* https://en.wikipedia.org/wiki/Packetized_elementary_stream */
+        if ((ai->frame_data[0] == 0) && (ai->frame_data[1] == 0) &&
+            (ai->frame_data[2] == 1))
         {
-            //hex_dump(ai->frame_data, 128);
+            ai->this_pdu_bytes = (ai->frame_data[4] << 8) | ai->frame_data[5];
+            ai->this_pdu_bytes += 6;
+        }
+        ai->frame_data_pos = 0;
+        ai->started = 1;
+    }
+    if (mpegts->payload_flag && ai->started)
+    {
+        memcpy(ai->frame_data + ai->frame_data_pos, data, data_bytes);
+        ai->frame_data_pos += data_bytes;
+        if ((ai->this_pdu_bytes > 6) &&
+            (ai->frame_data_pos >= ai->this_pdu_bytes))
+        {
             if (read_pts_dts(ai->frame_data, &pts, &dts) == 0)
             {
                 LLOGLN(10, ("tmpegts_audio_cb: pts %d dts %d", pts, dts));
@@ -866,14 +894,7 @@ tmpegts_audio_cb(const void* data, int data_bytes,
             mtwai->mstime_dts = vai->last_audio_dts - vai->cdiff;
             add_main_to_worker_audio_item(vai, mtwai);
             pipe_set(vai->main_to_worker_audio_pipe);
-            ai->frame_data_pos = 0;
         }
-        ai->started = 1;
-    }
-    if (ai->started)
-    {
-        memcpy(ai->frame_data + ai->frame_data_pos, data, data_bytes);
-        ai->frame_data_pos += data_bytes;
     }
     return rv;
 }
@@ -888,32 +909,32 @@ tmpegts_program_cb(const void* data, int data_bytes,
     struct video_audio_info* vai;
     struct program_info* pi;
 
-    LLOGLN(10, ("tmpegts_program_cb:"));
+    LLOGLN(10, ("tmpegts_program_cb: data_bytes %d", data_bytes));
     mlcbi = (struct mlcb_info*)udata;
     vai = mlcbi->vai;
     pi = vai->pi;
     if (mpegts->payload_unit_start_indicator)
     {
-        if (pi->frame_data_pos > 0)
-        {
-            if (mlcbi->cb->num_pids == 2)
-            {
-                LLOGLN(0, ("tmpegts_program_cb: adding pids for "
-                       "video and audio"));
-                mlcbi->cb->pids[2] = 0x31;
-                mlcbi->cb->pids[3] = 0x34;
-                mlcbi->cb->procs[2] = tmpegts_video_cb;
-                mlcbi->cb->procs[3] = tmpegts_audio_cb;
-                mlcbi->cb->num_pids = 4;
-            }
-            pi->frame_data_pos = 0;
-        }
+        pi->frame_data_pos = 0;
         pi->started = 1;
     }
-    if (pi->started)
+    if (mpegts->payload_flag && pi->started)
     {
         memcpy(pi->frame_data + pi->frame_data_pos, data, data_bytes);
+        //hex_dump(pi->frame_data, 128);
         pi->frame_data_pos += data_bytes;
+        if (mlcbi->cb->num_pids == 2)
+        {
+            LLOGLN(0, ("tmpegts_program_cb: adding pids for "
+                   "video and audio"));
+            mlcbi->cb->pids[2] = 0x31;
+            mlcbi->cb->pids[3] = 0x34;
+            //mlcbi->cb->pids[2] = 0x41;
+            //mlcbi->cb->pids[3] = 0x44;
+            mlcbi->cb->procs[2] = tmpegts_video_cb;
+            mlcbi->cb->procs[3] = tmpegts_audio_cb;
+            mlcbi->cb->num_pids = 4;
+        }
     }
     return 0;
 }
@@ -927,30 +948,53 @@ tmpegts_zero_cb(const void* data, int data_bytes,
     struct mlcb_info* mlcbi;
     struct video_audio_info* vai;
     struct zero_info* zi;
+    int program_pid;
+    int bytes;
+    char* ptr;
 
-    LLOGLN(10, ("tmpegts_zero_cb:"));
+    LLOGLN(10, ("tmpegts_zero_cb: data_bytes %d", data_bytes));
     mlcbi = (struct mlcb_info*)udata;
     vai = mlcbi->vai;
     zi = vai->zi;
     if (mpegts->payload_unit_start_indicator)
     {
-        if (zi->frame_data_pos > 0)
+        zi->frame_data_pos = 0;
+        zi->started = 1;
+    }
+    if (mpegts->payload_flag && zi->started)
+    {
+        memcpy(zi->frame_data + zi->frame_data_pos, data, data_bytes);
+        //hex_dump(zi->frame_data, 128);
+        zi->frame_data_pos += data_bytes;
+        if (mlcbi->cb->num_pids == 1)
         {
-            if (mlcbi->cb->num_pids == 1)
+            program_pid = 0;
+            if (zi->frame_data[0] == 0 &&
+                zi->frame_data[1] == 0 &&
+                zi->frame_data[2] == (char)0xb0)
             {
-                LLOGLN(0, ("tmpegts_zero_cb: adding pids for program"));
-                mlcbi->cb->pids[1] = 0x30;
+                bytes = (unsigned char)(zi->frame_data[3]);
+                bytes -= 9;
+                ptr = zi->frame_data + 9;
+                while (bytes > 0)
+                {
+                    LLOGLN(0, ("tmpegts_zero_cb: found program 0x%x", ptr[3]));
+                    if (program_pid == 0)
+                    {
+                        program_pid = (unsigned char)(ptr[3]);
+                    }
+                    ptr += 4;
+                    bytes -= 4;
+                }
+            }
+            if (program_pid != 0)
+            {
+                LLOGLN(0, ("tmpegts_zero_cb: adding program 0x%x", program_pid));
+                mlcbi->cb->pids[1] = program_pid;
                 mlcbi->cb->procs[1] = tmpegts_program_cb;
                 mlcbi->cb->num_pids = 2;
             }
-            zi->frame_data_pos = 0;
         }
-        zi->started = 1;
-    }
-    if (zi->started)
-    {
-        memcpy(zi->frame_data + zi->frame_data_pos, data, data_bytes);
-        zi->frame_data_pos += data_bytes;
     }
     return 0;
 }
