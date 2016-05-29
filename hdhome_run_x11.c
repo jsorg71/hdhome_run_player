@@ -60,6 +60,9 @@ static int g_xv_shmid = -1;
 static void * g_xv_shmaddr = 0;
 static int g_xv_shmbytes = 0;
 
+static int g_vwidth = 0;
+static int g_vheight = 0;
+
 /*****************************************************************************/
 int
 hdhome_run_x11_init(void)
@@ -132,6 +135,13 @@ hdhome_run_x11_get_buffer(int width, int height, int format,
     int bytes;
 
     LLOGLN(10, ("hdhome_run_x11_get_buffer:"));
+    if ((width != g_vwidth) || (height != g_vheight))
+    {
+        LLOGLN(0, ("hdhome_run_x11_get_buffer: createing buffer for %dx%d "
+               "video", width, height));
+        g_vwidth = width;
+        g_vheight = height;
+    }
     bytes = width * height * 2;
     if (bytes > g_xv_shmbytes)
     {

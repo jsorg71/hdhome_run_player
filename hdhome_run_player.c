@@ -103,7 +103,7 @@ struct video_audio_info
     int main_to_worker_video_pipe[2];
     int worker_to_main_video_pipe[2];
     int main_to_worker_audio_pipe[2];
-    pthread_mutex_t mutex;
+    pthread_mutex_t* mutex;
     struct list* main_to_worker_video_list;
     struct list* worker_to_main_video_list;
     struct list* main_to_worker_audio_list;
@@ -214,6 +214,10 @@ audio_delay_list_get_average(struct list* alist, int now, int diff)
     struct average_item* item;
 
     item = (struct average_item*)calloc(sizeof(struct average_item), 1);
+    if (item == NULL)
+    {
+        return 0;
+    }
     item->diff = diff;
     item->mstime = now;
     list_add_item(alist, (long)item);
@@ -257,7 +261,7 @@ get_main_to_worker_video_item(struct video_audio_info* vai,
     LLOGLN(10, ("get_main_to_worker_video_item: count %d",
            vai->main_to_worker_video_list->count));
     mtwvi = NULL;
-    pthread_mutex_lock(&(vai->mutex));
+    pthread_mutex_lock(vai->mutex);
     if (vai->main_to_worker_video_list->count > 0)
     {
         mtwvi = (struct main_to_worker_video_item*)
@@ -268,12 +272,12 @@ get_main_to_worker_video_item(struct video_audio_info* vai,
             (mtwvi->mstime_dts - mstime < 10000))
         {
             *wait_mstime = mtwvi->mstime_dts - mstime;
-            pthread_mutex_unlock(&(vai->mutex));
+            pthread_mutex_unlock(vai->mutex);
             return NULL;
         }
         list_remove_item(vai->main_to_worker_video_list, 0);
     }
-    pthread_mutex_unlock(&(vai->mutex));
+    pthread_mutex_unlock(vai->mutex);
     return mtwvi;
 }
 
@@ -282,9 +286,9 @@ static int
 add_main_to_worker_video_item(struct video_audio_info* vai,
                               struct main_to_worker_video_item* mtwvi)
 {
-    pthread_mutex_lock(&(vai->mutex));
+    pthread_mutex_lock(vai->mutex);
     list_add_item(vai->main_to_worker_video_list, (long)mtwvi);
-    pthread_mutex_unlock(&(vai->mutex));
+    pthread_mutex_unlock(vai->mutex);
     return 0;
 }
 
@@ -295,14 +299,14 @@ get_worker_to_main_video_item(struct video_audio_info* vai)
     struct worker_to_main_video_item* wtmvi;
 
     wtmvi = NULL;
-    pthread_mutex_lock(&(vai->mutex));
+    pthread_mutex_lock(vai->mutex);
     if (vai->worker_to_main_video_list->count > 0)
     {
         wtmvi = (struct worker_to_main_video_item*)
                 list_get_item(vai->worker_to_main_video_list, 0);
         list_remove_item(vai->worker_to_main_video_list, 0);
     }
-    pthread_mutex_unlock(&(vai->mutex));
+    pthread_mutex_unlock(vai->mutex);
     return wtmvi;
 }
 
@@ -311,9 +315,9 @@ static int
 add_worker_to_main_video_item(struct video_audio_info* vai,
                               struct worker_to_main_video_item* wtmvi)
 {
-    pthread_mutex_lock(&(vai->mutex));
+    pthread_mutex_lock(vai->mutex);
     list_add_item(vai->worker_to_main_video_list, (long)wtmvi);
-    pthread_mutex_unlock(&(vai->mutex));
+    pthread_mutex_unlock(vai->mutex);
     return 0;
 }
 
@@ -324,14 +328,14 @@ get_main_to_worker_audio_item(struct video_audio_info* vai)
     struct main_to_worker_audio_item* mtwai;
 
     mtwai = NULL;
-    pthread_mutex_lock(&(vai->mutex));
+    pthread_mutex_lock(vai->mutex);
     if (vai->main_to_worker_audio_list->count > 0)
     {
         mtwai = (struct main_to_worker_audio_item*)
                 list_get_item(vai->main_to_worker_audio_list, 0);
         list_remove_item(vai->main_to_worker_audio_list, 0);
     }
-    pthread_mutex_unlock(&(vai->mutex));
+    pthread_mutex_unlock(vai->mutex);
     return mtwai;
 }
 
@@ -340,9 +344,9 @@ static int
 add_main_to_worker_audio_item(struct video_audio_info* vai,
                               struct main_to_worker_audio_item* mtwai)
 {
-    pthread_mutex_lock(&(vai->mutex));
+    pthread_mutex_lock(vai->mutex);
     list_add_item(vai->main_to_worker_audio_list, (long)mtwai);
-    pthread_mutex_unlock(&(vai->mutex));
+    pthread_mutex_unlock(vai->mutex);
     return 0;
 }
 
@@ -391,24 +395,30 @@ decode_video_and_send_back(struct video_audio_info* vai,
             if (error == 0)
             {
                 out_data = (unsigned char*)malloc(out_data_bytes);
-                error = hdhome_run_avcodec_mpeg2_get_frame_data(vi->mpeg2_handle,
-                                                                out_data,
-                                                                out_data_bytes);
-                if (error == 0)
+                if (out_data != NULL)
                 {
-                    wtmvi = (struct worker_to_main_video_item*)
-                        calloc(sizeof(struct worker_to_main_video_item), 1);
-                    wtmvi->data = out_data;
-                    wtmvi->data_bytes = out_data_bytes;
-                    wtmvi->format = format;
-                    wtmvi->width = width;
-                    wtmvi->height = height;
-                    add_worker_to_main_video_item(vai, wtmvi);
-                    pipe_set(vai->worker_to_main_video_pipe);
-                }
-                else
-                {
-                    free(out_data);
+                    error = hdhome_run_avcodec_mpeg2_get_frame_data(vi->mpeg2_handle,
+                                                                    out_data,
+                                                                    out_data_bytes);
+                    if (error == 0)
+                    {
+                        wtmvi = (struct worker_to_main_video_item*)
+                                calloc(sizeof(struct worker_to_main_video_item), 1);
+                        if (wtmvi != NULL)
+                        {
+                            wtmvi->data = out_data;
+                            wtmvi->data_bytes = out_data_bytes;
+                            wtmvi->format = format;
+                            wtmvi->width = width;
+                            wtmvi->height = height;
+                            add_worker_to_main_video_item(vai, wtmvi);
+                            pipe_set(vai->worker_to_main_video_pipe);
+                        }
+                    }
+                    else
+                    {
+                        free(out_data);
+                    }
                 }
             }
         }
@@ -540,56 +550,65 @@ decode_and_present_audio(struct video_audio_info* vai,
             if ((error == 0) && (out_data_bytes > 0))
             {
                 out_data = malloc(out_data_bytes);
-                error =  hdhome_run_avcodec_ac3_get_frame_data(ai->ac3_handle,
-                                                               out_data,
-                                                               out_data_bytes);
-                if (error == 0)
+                if (out_data != NULL)
                 {
-                    if (ai->pa_handle == NULL)
+                    error =  hdhome_run_avcodec_ac3_get_frame_data(ai->ac3_handle,
+                                                                   out_data,
+                                                                   out_data_bytes);
+                    if (error == 0)
                     {
-                        error = hdhome_run_pa_init("hdhome_run_player",
-                                                   &(ai->pa_handle));
-                        if (error == 0)
+                        if (ai->pa_handle == NULL)
                         {
-                            switch (channels)
+                            error = hdhome_run_pa_init("hdhome_run_player",
+                                                       &(ai->pa_handle));
+                            if (error == 0)
                             {
-                                case 1:
-                                    pa_flags = CAP_PA_FORMAT_48000_1CH_16LE;
-                                    break;
-                                case 2:
-                                    pa_flags = CAP_PA_FORMAT_48000_2CH_16LE;
-                                    break;
-                                default:
-                                    pa_flags = CAP_PA_FORMAT_48000_6CH_16LE;
-                                    break;
+                                switch (channels)
+                                {
+                                    case 1:
+                                        LLOGLN(0, ("decode_and_present_audio: "
+                                               "starting 1 channel 48000 audio"));
+                                        pa_flags = CAP_PA_FORMAT_48000_1CH_16LE;
+                                        break;
+                                    case 2:
+                                        LLOGLN(0, ("decode_and_present_audio: "
+                                               "starting 2 channel 48000 audio"));
+                                        pa_flags = CAP_PA_FORMAT_48000_2CH_16LE;
+                                        break;
+                                    default:
+                                        LLOGLN(0, ("decode_and_present_audio: "
+                                               "starting 6 channel 48000 audio"));
+                                        pa_flags = CAP_PA_FORMAT_48000_6CH_16LE;
+                                        break;
+                                }
+                                hdhome_run_pa_start(ai->pa_handle,
+                                                    "hdhome_run_player",
+                                                    HD_AUDIO_MSDELAY, pa_flags);
                             }
-                            hdhome_run_pa_start(ai->pa_handle,
-                                                "hdhome_run_player",
-                                                HD_AUDIO_MSDELAY, pa_flags);
+                        }
+                        if (ai->pa_handle != NULL)
+                        {
+#if 1
+                            hdhome_run_pa_play(ai->pa_handle,
+                                               out_data, out_data_bytes);
+#else
+                            hdhome_run_pa_play_non_blocking(ai->pa_handle,
+                                                            out_data,
+                                                            out_data_bytes, 0);
+#endif
+                            now = get_mstime();
+                            mtwai->mstime_queued = now;
+                            diff = now - mtwai->mstime_dts;
+                            vai->audio_latency =
+                                audio_delay_list_get_average(ai->audio_delay_list,
+                                                             now, diff);
+                            LLOGLN(10, ("decode_and_present_audio: "
+                                   "audio_latency %d diff %d",
+                                   vai->audio_latency, diff));
                         }
                     }
-                    if (ai->pa_handle != NULL)
-                    {
-#if 1
-                        hdhome_run_pa_play(ai->pa_handle,
-                                           out_data, out_data_bytes);
-#else
-                        hdhome_run_pa_play_non_blocking(ai->pa_handle,
-                                                        out_data,
-                                                        out_data_bytes, 0);
-#endif
-                        now = get_mstime();
-                        mtwai->mstime_queued = now;
-                        diff = now - mtwai->mstime_dts;
-                        vai->audio_latency =
-                            audio_delay_list_get_average(ai->audio_delay_list,
-                                                         now, diff);
-                        LLOGLN(10, ("decode_and_present_audio: "
-                               "audio_latency %d diff %d",
-                               vai->audio_latency, diff));
-                    }
+                    free(out_data);
                 }
-                free(out_data);
             }
         }
     }
@@ -807,15 +826,21 @@ tmpegts_video_cb(const void* data, int data_bytes,
             LLOGLN(10, ("cdata_bytes %d", cdata_bytes));
             mtwvi = (struct main_to_worker_video_item*)
                     calloc(sizeof(struct main_to_worker_video_item), 1);
-            mtwvi->data = (unsigned char*)malloc(cdata_bytes);
-            memcpy(mtwvi->data, cdata, cdata_bytes);
-            mtwvi->data_bytes = cdata_bytes;
-            LLOGLN(10, ("tmpegts_video_cb: audio_latency %d",
-                   vai->audio_latency));
-            mtwvi->mstime_dts = mstime_dts + vai->audio_latency +
-                                HD_AUDIO_MSDELAY - 500;
-            add_main_to_worker_video_item(vai, mtwvi);
-            pipe_set(vai->main_to_worker_video_pipe);
+            if (mtwvi != NULL)
+            {
+                mtwvi->data = (unsigned char*)malloc(cdata_bytes);
+                if (mtwvi->data != NULL)
+                {
+                    memcpy(mtwvi->data, cdata, cdata_bytes); 
+                    mtwvi->data_bytes = cdata_bytes;
+                    LLOGLN(10, ("tmpegts_video_cb: audio_latency %d",
+                           vai->audio_latency));
+                    mtwvi->mstime_dts = mstime_dts + vai->audio_latency +
+                                        HD_AUDIO_MSDELAY - 500;
+                    add_main_to_worker_video_item(vai, mtwvi);
+                    pipe_set(vai->main_to_worker_video_pipe);
+                }
+            }
         }
         vi->frame_data_pos = 0;
         vi->started = 1;
@@ -887,13 +912,19 @@ tmpegts_audio_cb(const void* data, int data_bytes,
             cdata_bytes = ai->frame_data_pos - (9 + remainder);
             mtwai = (struct main_to_worker_audio_item*)
                     calloc(sizeof(struct main_to_worker_audio_item), 1);
-            mtwai->data = (unsigned char*)malloc(cdata_bytes);
-            memcpy(mtwai->data, cdata, cdata_bytes);
-            mtwai->data_bytes = cdata_bytes;
-            mtwai->mstime_in = get_mstime();
-            mtwai->mstime_dts = vai->last_audio_dts - vai->cdiff;
-            add_main_to_worker_audio_item(vai, mtwai);
-            pipe_set(vai->main_to_worker_audio_pipe);
+            if (mtwai != NULL)
+            {
+                mtwai->data = (unsigned char *)malloc(cdata_bytes); 
+                if (mtwai->data != NULL)
+                {
+                    memcpy(mtwai->data, cdata, cdata_bytes);
+                    mtwai->data_bytes = cdata_bytes;
+                    mtwai->mstime_in = get_mstime();
+                    mtwai->mstime_dts = vai->last_audio_dts - vai->cdiff;
+                    add_main_to_worker_audio_item(vai, mtwai);
+                    pipe_set(vai->main_to_worker_audio_pipe);
+                }
+            }
         }
     }
     return rv;
@@ -1096,9 +1127,7 @@ main(int argc, char** argv)
     struct video_audio_info vai;
     int scks[32];
     tmlcb mlcbs[32];
-
     struct mlcb_info mlcbi;
-
     pthread_t thread;
 
     memset(&vi, 0, sizeof(vi));
@@ -1106,29 +1135,24 @@ main(int argc, char** argv)
     vi.frame_data_alloc = (char*)malloc(vi.frame_data_bytes + 16);
     vi.frame_data = (char*)((((long)vi.frame_data_alloc) + 15) & ~15);
     vi.frame_list = list_create();
-
     memset(&ai, 0, sizeof(ai));
     ai.frame_data_bytes = 1024 * 1024;
     ai.frame_data_alloc = (char*)malloc(ai.frame_data_bytes + 16);
     ai.frame_data = (char*)((((long)ai.frame_data_alloc) + 15) & ~15);
     ai.audio_delay_list = list_create();
     ai.audio_delay_list->auto_free = 1;
-
     memset(&pi, 0, sizeof(pi));
     pi.frame_data_bytes = 1024 * 1024;
     pi.frame_data_alloc = (char*)malloc(pi.frame_data_bytes + 16);
     pi.frame_data = (char*)((((long)pi.frame_data_alloc) + 15) & ~15);
-
     memset(&zi, 0, sizeof(zi));
     zi.frame_data_bytes = 1024 * 1024;
     zi.frame_data_alloc = (char*)malloc(zi.frame_data_bytes + 16);
     zi.frame_data = (char*)((((long)zi.frame_data_alloc) + 15) & ~15);
-
     memset(&cb, 0, sizeof(cb));
     cb.pids[0] = 0x00;
     cb.procs[0] = tmpegts_zero_cb;
     cb.num_pids = 1;
-
     memset(&vai, 0, sizeof(vai));
     vai.vi = &vi;
     vai.ai = &ai;
@@ -1149,35 +1173,55 @@ main(int argc, char** argv)
         LLOGLN(0, ("pipe failed"));
         return 1;
     }
-    pthread_mutex_init(&(vai.mutex), 0);
+    vai.mutex = (pthread_mutex_t*)malloc(sizeof(pthread_mutex_t));
+    if (vai.mutex == NULL)
+    {
+        LLOGLN(0, ("malloc failed"));
+        return 1;
+    }
+    if (pthread_mutex_init(vai.mutex, NULL) != 0)
+    {
+        LLOGLN(0, ("pthread_mutex_init failed"));
+        return 1;
+    }
     vai.main_to_worker_video_list = list_create();
+    if (vai.main_to_worker_video_list == NULL)
+    {
+        LLOGLN(0, ("list_create failed"));
+        return 1;
+    }
     vai.worker_to_main_video_list = list_create();
+    if (vai.worker_to_main_video_list == NULL)
+    {
+        LLOGLN(0, ("list_create failed"));
+        return 1;
+    }
     vai.main_to_worker_audio_list = list_create();
-
+    if (vai.main_to_worker_audio_list == NULL)
+    {
+        LLOGLN(0, ("list_create failed"));
+        return 1;
+    }
     if (hdhome_run_avcodec_init() != 0)
     {
         LLOGLN(0, ("hdhome_run_avcodec_init failed"));
         return 1;
     }
-
     if (hdhome_run_x11_init() != 0)
     {
         LLOGLN(0, ("hdhome_run_x11_init failed"));
         return 1;
     }
-
     error = hdhome_run_avcodec_ac3_create(&(ai.ac3_handle));
     if (error != 0)
     {
         LLOGLN(0, ("hdhome_run_avcodec_ac3_create failed error %d", error));
     }
-
     error = hdhome_run_avcodec_mpeg2_create(&(vi.mpeg2_handle));
     if (error != 0)
     {
         LLOGLN(0, ("hdhome_run_avcodec_mpeg2_create failed error %d", error));
     }
-
     hdhr = hdhomerun_device_create(HDHOMERUN_DEVICE_ID_WILDCARD, 0, 0, 0);
     //hdhr = hdhomerun_device_create(HDHOMERUN_DEVICE_ID_WILDCARD, 0x0a00000b, 0, 0);
     //hdhr = hdhomerun_device_create_from_str("103BF3FB-1", 0);
