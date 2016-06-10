@@ -111,6 +111,10 @@ struct video_audio_info
     int cdiff;
     int last_video_dts;
     int last_audio_dts;
+    int main_to_worker_video_bytes;
+    int worker_to_main_video_bytes;
+    int main_to_worker_audio_bytes;
+    int pad1;
 };
 
 struct mlcb_info
@@ -276,6 +280,7 @@ get_main_to_worker_video_item(struct video_audio_info* vai,
             return NULL;
         }
         list_remove_item(vai->main_to_worker_video_list, 0);
+        vai->main_to_worker_video_bytes -= mtwvi->data_bytes;
     }
     pthread_mutex_unlock(vai->mutex);
     return mtwvi;
@@ -288,7 +293,14 @@ add_main_to_worker_video_item(struct video_audio_info* vai,
 {
     pthread_mutex_lock(vai->mutex);
     list_add_item(vai->main_to_worker_video_list, (long)mtwvi);
+    vai->main_to_worker_video_bytes += mtwvi->data_bytes;
     pthread_mutex_unlock(vai->mutex);
+    if (vai->main_to_worker_video_bytes > 10 * 1024 * 1024)
+    {
+        LLOGLN(0, ("add_main_to_worker_video_item: "
+               "main_to_worker_video_bytes %d",
+               vai->main_to_worker_video_bytes));
+    }
     return 0;
 }
 
@@ -305,6 +317,7 @@ get_worker_to_main_video_item(struct video_audio_info* vai)
         wtmvi = (struct worker_to_main_video_item*)
                 list_get_item(vai->worker_to_main_video_list, 0);
         list_remove_item(vai->worker_to_main_video_list, 0);
+        vai->worker_to_main_video_bytes -= wtmvi->data_bytes;
     }
     pthread_mutex_unlock(vai->mutex);
     return wtmvi;
@@ -317,7 +330,14 @@ add_worker_to_main_video_item(struct video_audio_info* vai,
 {
     pthread_mutex_lock(vai->mutex);
     list_add_item(vai->worker_to_main_video_list, (long)wtmvi);
+    vai->worker_to_main_video_bytes += wtmvi->data_bytes;
     pthread_mutex_unlock(vai->mutex);
+    if (vai->worker_to_main_video_bytes > 10 * 1024 * 1024)
+    {
+        LLOGLN(0, ("add_worker_to_main_video_item: "
+               "worker_to_main_video_bytes %d",
+               vai->worker_to_main_video_bytes));
+    }
     return 0;
 }
 
@@ -334,6 +354,7 @@ get_main_to_worker_audio_item(struct video_audio_info* vai)
         mtwai = (struct main_to_worker_audio_item*)
                 list_get_item(vai->main_to_worker_audio_list, 0);
         list_remove_item(vai->main_to_worker_audio_list, 0);
+        vai->main_to_worker_audio_bytes -= mtwai->data_bytes;
     }
     pthread_mutex_unlock(vai->mutex);
     return mtwai;
@@ -346,7 +367,14 @@ add_main_to_worker_audio_item(struct video_audio_info* vai,
 {
     pthread_mutex_lock(vai->mutex);
     list_add_item(vai->main_to_worker_audio_list, (long)mtwai);
+    vai->main_to_worker_audio_bytes += mtwai->data_bytes;
     pthread_mutex_unlock(vai->mutex);
+    if (vai->main_to_worker_audio_bytes > 10 * 1024 * 1024)
+    {
+        LLOGLN(0, ("add_main_to_worker_audio_item: "
+               "main_to_worker_audio_bytes %d",
+               vai->main_to_worker_audio_bytes));
+    }
     return 0;
 }
 
