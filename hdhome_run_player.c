@@ -123,6 +123,8 @@ struct mlcb_info
     struct tmpegts_cb* cb;
     struct video_audio_info* vai;
     int term_pipe[2];
+    int frame_count;
+    int pad0;
 };
 
 struct main_to_worker_video_item
@@ -291,16 +293,17 @@ static int
 add_main_to_worker_video_item(struct video_audio_info* vai,
                               struct main_to_worker_video_item* mtwvi)
 {
-    pthread_mutex_lock(vai->mutex);
-    list_add_item(vai->main_to_worker_video_list, (long)mtwvi);
-    vai->main_to_worker_video_bytes += mtwvi->data_bytes;
-    pthread_mutex_unlock(vai->mutex);
-    if (vai->main_to_worker_video_bytes > 10 * 1024 * 1024)
+    if (vai->main_to_worker_video_bytes > 100 * 1024 * 1024)
     {
         LLOGLN(0, ("add_main_to_worker_video_item: "
                "main_to_worker_video_bytes %d",
                vai->main_to_worker_video_bytes));
+        return 1;
     }
+    pthread_mutex_lock(vai->mutex);
+    list_add_item(vai->main_to_worker_video_list, (long)mtwvi);
+    vai->main_to_worker_video_bytes += mtwvi->data_bytes;
+    pthread_mutex_unlock(vai->mutex);
     return 0;
 }
 
@@ -328,16 +331,17 @@ static int
 add_worker_to_main_video_item(struct video_audio_info* vai,
                               struct worker_to_main_video_item* wtmvi)
 {
-    pthread_mutex_lock(vai->mutex);
-    list_add_item(vai->worker_to_main_video_list, (long)wtmvi);
-    vai->worker_to_main_video_bytes += wtmvi->data_bytes;
-    pthread_mutex_unlock(vai->mutex);
-    if (vai->worker_to_main_video_bytes > 10 * 1024 * 1024)
+    if (vai->worker_to_main_video_bytes > 100 * 1024 * 1024)
     {
         LLOGLN(0, ("add_worker_to_main_video_item: "
                "worker_to_main_video_bytes %d",
                vai->worker_to_main_video_bytes));
+        return 1;
     }
+    pthread_mutex_lock(vai->mutex);
+    list_add_item(vai->worker_to_main_video_list, (long)wtmvi);
+    vai->worker_to_main_video_bytes += wtmvi->data_bytes;
+    pthread_mutex_unlock(vai->mutex);
     return 0;
 }
 
@@ -365,16 +369,17 @@ static int
 add_main_to_worker_audio_item(struct video_audio_info* vai,
                               struct main_to_worker_audio_item* mtwai)
 {
-    pthread_mutex_lock(vai->mutex);
-    list_add_item(vai->main_to_worker_audio_list, (long)mtwai);
-    vai->main_to_worker_audio_bytes += mtwai->data_bytes;
-    pthread_mutex_unlock(vai->mutex);
-    if (vai->main_to_worker_audio_bytes > 10 * 1024 * 1024)
+    if (vai->main_to_worker_audio_bytes > 100 * 1024 * 1024)
     {
         LLOGLN(0, ("add_main_to_worker_audio_item: "
                "main_to_worker_audio_bytes %d",
                vai->main_to_worker_audio_bytes));
+        return 1;
     }
+    pthread_mutex_lock(vai->mutex);
+    list_add_item(vai->main_to_worker_audio_list, (long)mtwai);
+    vai->main_to_worker_audio_bytes += mtwai->data_bytes;
+    pthread_mutex_unlock(vai->mutex);
     return 0;
 }
 
@@ -439,8 +444,16 @@ decode_video_and_send_back(struct video_audio_info* vai,
                             wtmvi->format = format;
                             wtmvi->width = width;
                             wtmvi->height = height;
-                            add_worker_to_main_video_item(vai, wtmvi);
+                            if (add_worker_to_main_video_item(vai, wtmvi) != 0)
+                            {
+                                free(wtmvi->data);
+                                free(wtmvi);
+                            }
                             pipe_set(vai->worker_to_main_video_pipe);
+                        }
+                        else
+                        {
+                            free(out_data);
                         }
                     }
                     else
@@ -865,8 +878,16 @@ tmpegts_video_cb(const void* data, int data_bytes,
                            vai->audio_latency));
                     mtwvi->mstime_dts = mstime_dts + vai->audio_latency +
                                         HD_AUDIO_MSDELAY - 500;
-                    add_main_to_worker_video_item(vai, mtwvi);
+                    if (add_main_to_worker_video_item(vai, mtwvi) != 0)
+                    {
+                        free(mtwvi->data);
+                        free(mtwvi);
+                    }
                     pipe_set(vai->main_to_worker_video_pipe);
+                }
+                else
+                {
+                    free(mtwvi);
                 }
             }
         }
@@ -949,8 +970,16 @@ tmpegts_audio_cb(const void* data, int data_bytes,
                     mtwai->data_bytes = cdata_bytes;
                     mtwai->mstime_in = get_mstime();
                     mtwai->mstime_dts = vai->last_audio_dts - vai->cdiff;
-                    add_main_to_worker_audio_item(vai, mtwai);
+                    if (add_main_to_worker_audio_item(vai, mtwai) != 0)
+                    {
+                        free(mtwai->data);
+                        free(mtwai);
+                    }
                     pipe_set(vai->main_to_worker_audio_pipe);
+                }
+                else
+                {
+                    free(mtwai);
                 }
             }
         }
@@ -1116,6 +1145,7 @@ video_callback(int sck, void* udata)
     wtmvi = get_worker_to_main_video_item(mlcbi->vai);
     while (wtmvi != NULL)
     {
+        mlcbi->frame_count++;
         error = hdhome_run_x11_get_buffer(wtmvi->width, wtmvi->height,
                                           wtmvi->format,
                                           (void**)(&decoded_data),

@@ -27,7 +27,19 @@
 #warning LIBAVCODEC_VERSION_MAJOR not defined
 #endif
 
-// LIBAVCODEC_VERSION_MAJOR 52                             ubuntu 10.04
+#define LLOG_LEVEL 1
+#define LLOGLN(_level, _args) \
+  do \
+  { \
+    if (_level < LLOG_LEVEL) \
+    { \
+        printf _args ; \
+        printf("\n"); \
+    } \
+  } \
+  while (0)
+
+// LIBAVCODEC_VERSION_MAJOR 52 LIBAVCODEC_VERSION_MINOR 20 ubuntu 10.04
 // LIBAVCODEC_VERSION_MAJOR 52 LIBAVCODEC_VERSION_MINOR 20 debian 6
 // LIBAVCODEC_VERSION_MAJOR 53 LIBAVCODEC_VERSION_MINOR 35 ubuntu 12.04
 // LIBAVCODEC_VERSION_MAJOR 53 LIBAVCODEC_VERSION_MINOR 35 debian 7
@@ -350,20 +362,50 @@ hdhome_run_avcodec_ac3_get_frame_data(void* obj, void* data, int data_bytes)
         src[4] = (float*)(self->frame->data[4]);
         src[5] = (float*)(self->frame->data[5]);
         dst = (short*)data;
-        for (index = 0; index < self->frame->nb_samples; index++)
+        if (self->codec_context->channels == 6)
         {
-            if (data_bytes < 12) /* 6 shorts */
+            for (index = 0; index < self->frame->nb_samples; index++)
             {
-                break;
+                if (data_bytes < 12) /* 6 shorts */
+                {
+                    break;
+                }
+                dst[0] = src[0][index] * 32768;
+                dst[1] = src[1][index] * 32768;
+                dst[2] = src[2][index] * 32768;
+                dst[3] = src[3][index] * 32768;
+                dst[4] = src[4][index] * 32768;
+                dst[5] = src[5][index] * 32768;
+                dst += 6;
+                data_bytes -= 12; /* 6 shorts */
             }
-            dst[0] = src[0][index] * 32768;
-            dst[1] = src[1][index] * 32768;
-            dst[2] = src[2][index] * 32768;
-            dst[3] = src[3][index] * 32768;
-            dst[4] = src[4][index] * 32768;
-            dst[5] = src[5][index] * 32768;
-            dst += 6;
-            data_bytes -= 12; /* 6 shorts */
+        }
+        else if (self->codec_context->channels == 2)
+        {
+            for (index = 0; index < self->frame->nb_samples; index++)
+            {
+                if (data_bytes < 4) /* 2 shorts */
+                {
+                    break;
+                }
+                dst[0] = src[0][index] * 32768;
+                dst[1] = src[1][index] * 32768;
+                dst += 2;
+                data_bytes -= 4; /* 2 shorts */
+            }
+        }
+        else if (self->codec_context->channels == 1)
+        {
+            for (index = 0; index < self->frame->nb_samples; index++)
+            {
+                if (data_bytes < 2) /* 1 short */
+                {
+                    break;
+                }
+                dst[0] = src[0][index] * 32768;
+                dst += 1;
+                data_bytes -= 2; /* 1 short */
+            }
         }
 #else
         /* self->frame->data only has 4 elements */
