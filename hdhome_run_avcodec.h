@@ -19,30 +19,34 @@
 #ifndef _HDHOME_RUN_AVCODEC_H_
 #define _HDHOME_RUN_AVCODEC_H_
 
+#define AUDIO_CODEC_ID_AC3 0
+
+#define VIDEO_CODEC_ID_MPEG2 0
+
 int
 hdhome_run_avcodec_init(void);
 int
-hdhome_run_avcodec_ac3_create(void** obj);
+hdhome_run_avcodec_audio_create(void** obj, int codec_id);
 int
-hdhome_run_avcodec_ac3_decode(void* obj, void* cdata, int cdata_bytes,
-                              int* cdata_bytes_processed, int* decoded);
-int
-hdhome_run_avcodec_ac3_get_frame_info(void* obj, int* channels, int* format,
-                                      int* bytes);
-int
-hdhome_run_avcodec_ac3_get_frame_data(void* obj, void* data, int data_bytes);
-
-int
-hdhome_run_avcodec_mpeg2_create(void** obj);
-int
-hdhome_run_avcodec_mpeg2_delete(void* obj);
-int
-hdhome_run_avcodec_mpeg2_decode(void* obj, void* cdata, int cdata_bytes,
+hdhome_run_avcodec_audio_decode(void* obj, void* cdata, int cdata_bytes,
                                 int* cdata_bytes_processed, int* decoded);
 int
-hdhome_run_avcodec_mpeg2_get_frame_info(void* obj, int* width, int* height,
+hdhome_run_avcodec_audio_get_frame_info(void* obj, int* channels, int* format,
+                                        int* bytes);
+int
+hdhome_run_avcodec_audio_get_frame_data(void* obj, void* data, int data_bytes);
+
+int
+hdhome_run_avcodec_video_create(void** obj, int codec_id);
+int
+hdhome_run_avcodec_video_delete(void* obj);
+int
+hdhome_run_avcodec_video_decode(void* obj, void* cdata, int cdata_bytes,
+                                int* cdata_bytes_processed, int* decoded);
+int
+hdhome_run_avcodec_video_get_frame_info(void* obj, int* width, int* height,
                                         int* format, int* bytes);
 int
-hdhome_run_avcodec_mpeg2_get_frame_data(void* obj, void* data, int data_bytes);
+hdhome_run_avcodec_video_get_frame_data(void* obj, void* data, int data_bytes);
 
 #endif

@@ -23,6 +23,8 @@
 #include <libavcodec/avcodec.h>
 #include <libavutil/mem.h>
 
+#include "hdhome_run_avcodec.h"
+
 #ifndef LIBAVCODEC_VERSION_MAJOR
 #warning LIBAVCODEC_VERSION_MAJOR not defined
 #endif
@@ -45,7 +47,7 @@
 // LIBAVCODEC_VERSION_MAJOR 53 LIBAVCODEC_VERSION_MINOR 35 debian 7
 // LIBAVCODEC_VERSION_MAJOR 54 LIBAVCODEC_VERSION_MINOR 35 ubuntu 14.04
 // LIBAVCODEC_VERSION_MAJOR 56 LIBAVCODEC_VERSION_MINOR 1  debian 8
-// LIBAVCODEC_VERSION_MAJOR 56                             ubuntu 15.10
+// LIBAVCODEC_VERSION_MAJOR 56 LIBAVCODEC_VERSION_MINOR 60 ubuntu 16.04
 // LIBAVCODEC_VERSION_MAJOR 56 LIBAVCODEC_VERSION_MINOR 60 FreeBSD(PCBSD10.1.2-05-22-2015)
 
 //example
@@ -88,7 +90,7 @@
 #define AVCODEC_OPEN(_context, _codec) avcodec_open2(_context, _codec, NULL)
 #endif
 
-struct avcodec_ac3
+struct avcodec_audio
 {
     AVCodecContext* codec_context;
     AVCodec* codec;
@@ -98,7 +100,7 @@ struct avcodec_ac3
     int pad0;
 };
 
-struct avcodec_mpeg2
+struct avcodec_video
 {
     AVCodecContext* codec_context;
     AVCodec* codec;
@@ -115,28 +117,38 @@ hdhome_run_avcodec_init(void)
 
 /*****************************************************************************/
 int
-hdhome_run_avcodec_ac3_create(void** obj)
+hdhome_run_avcodec_audio_create(void** obj, int codec_id)
 {
-    struct avcodec_ac3* self;
+    struct avcodec_audio* self;
     int error;
+    int avcodec_id;
 
     if (obj == NULL)
     {
         return 1;
     }
-    self = (struct avcodec_ac3*)malloc(sizeof(struct avcodec_ac3));
+    avcodec_id = 0;
+    switch (codec_id)
+    {
+        case AUDIO_CODEC_ID_AC3:
+            avcodec_id = CODEC_ID_AC3;
+            break;
+        default:
+            return 6;
+    }
+    self = (struct avcodec_audio*)malloc(sizeof(struct avcodec_audio));
     if (self == NULL)
     {
         return 2;
     }
-    memset(self, 0, sizeof(struct avcodec_ac3));
+    memset(self, 0, sizeof(struct avcodec_audio));
     self->codec_context = AVCODEC_ALLOC_CONTEXT;
     if (self->codec_context == NULL)
     {
         free(self);
         return 3;
     }
-    self->codec = avcodec_find_decoder(CODEC_ID_AC3);
+    self->codec = avcodec_find_decoder(avcodec_id);
     if (self->codec == NULL)
     {
         avcodec_close(self->codec_context);
@@ -157,11 +169,11 @@ hdhome_run_avcodec_ac3_create(void** obj)
 
 /*****************************************************************************/
 int
-hdhome_run_avcodec_ac3_delete(void* obj)
+hdhome_run_avcodec_audio_delete(void* obj)
 {
-    struct avcodec_ac3* self;
+    struct avcodec_audio* self;
 
-    self = (struct avcodec_ac3*)obj;
+    self = (struct avcodec_audio*)obj;
     if (self == NULL)
     {
         return 0;
@@ -177,16 +189,16 @@ hdhome_run_avcodec_ac3_delete(void* obj)
 
 /*****************************************************************************/
 int
-hdhome_run_avcodec_ac3_decode(void* obj, void* cdata, int cdata_bytes,
-                              int* cdata_bytes_processed, int* decoded)
+hdhome_run_avcodec_audio_decode(void* obj, void* cdata, int cdata_bytes,
+                                int* cdata_bytes_processed, int* decoded)
 {
-    struct avcodec_ac3* self;
+    struct avcodec_audio* self;
     int len;
     int bytes_processed;
     unsigned char* src;
     int src_size;
 
-    self = (struct avcodec_ac3*)obj;
+    self = (struct avcodec_audio*)obj;
     if (self == NULL)
     {
         return 1;
@@ -224,12 +236,12 @@ hdhome_run_avcodec_ac3_decode(void* obj, void* cdata, int cdata_bytes,
 
 /*****************************************************************************/
 int
-hdhome_run_avcodec_ac3_get_frame_info(void* obj, int* channels, int* format,
-                                      int* bytes)
+hdhome_run_avcodec_audio_get_frame_info(void* obj, int* channels, int* format,
+                                        int* bytes)
 {
-    struct avcodec_ac3* self;
+    struct avcodec_audio* self;
 
-    self = (struct avcodec_ac3*)obj;
+    self = (struct avcodec_audio*)obj;
     if (self == NULL)
     {
         return 1;
@@ -242,11 +254,11 @@ hdhome_run_avcodec_ac3_get_frame_info(void* obj, int* channels, int* format,
 
 /*****************************************************************************/
 int
-hdhome_run_avcodec_ac3_get_frame_data(void* obj, void* data, int data_bytes)
+hdhome_run_avcodec_audio_get_frame_data(void* obj, void* data, int data_bytes)
 {
-    struct avcodec_ac3* self;
+    struct avcodec_audio* self;
 
-    self = (struct avcodec_ac3*)obj;
+    self = (struct avcodec_audio*)obj;
     if (self == NULL)
     {
         return 1;
@@ -259,15 +271,15 @@ hdhome_run_avcodec_ac3_get_frame_data(void* obj, void* data, int data_bytes)
 
 /*****************************************************************************/
 int
-hdhome_run_avcodec_ac3_decode(void* obj, void* cdata, int cdata_bytes,
-                              int* cdata_bytes_processed, int* decoded)
+hdhome_run_avcodec_audio_decode(void* obj, void* cdata, int cdata_bytes,
+                                int* cdata_bytes_processed, int* decoded)
 {
-    struct avcodec_ac3* self;
+    struct avcodec_audio* self;
     AVPacket pkt;
     int len;
     int bytes_processed;
 
-    self = (struct avcodec_ac3*)obj;
+    self = (struct avcodec_audio*)obj;
     if (self == NULL)
     {
         return 1;
@@ -305,13 +317,13 @@ hdhome_run_avcodec_ac3_decode(void* obj, void* cdata, int cdata_bytes,
 
 /*****************************************************************************/
 int
-hdhome_run_avcodec_ac3_get_frame_info(void* obj, int* channels, int* format,
-                                      int* bytes)
+hdhome_run_avcodec_audio_get_frame_info(void* obj, int* channels, int* format,
+                                        int* bytes)
 {
-    struct avcodec_ac3* self;
+    struct avcodec_audio* self;
     int frame_size;
 
-    self = (struct avcodec_ac3*)obj;
+    self = (struct avcodec_audio*)obj;
     if (self == NULL)
     {
         return 1;
@@ -334,11 +346,11 @@ hdhome_run_avcodec_ac3_get_frame_info(void* obj, int* channels, int* format,
 
 /*****************************************************************************/
 int
-hdhome_run_avcodec_ac3_get_frame_data(void* obj, void* data, int data_bytes)
+hdhome_run_avcodec_audio_get_frame_data(void* obj, void* data, int data_bytes)
 {
-    struct avcodec_ac3* self;
+    struct avcodec_audio* self;
 
-    self = (struct avcodec_ac3*)obj;
+    self = (struct avcodec_audio*)obj;
     if (self == NULL)
     {
         return 1;
@@ -423,28 +435,38 @@ hdhome_run_avcodec_ac3_get_frame_data(void* obj, void* data, int data_bytes)
 
 /*****************************************************************************/
 int
-hdhome_run_avcodec_mpeg2_create(void** obj)
+hdhome_run_avcodec_video_create(void** obj, int codec_id)
 {
-    struct avcodec_mpeg2* self;
+    struct avcodec_video* self;
     int error;
+    int avcodec_id;
 
     if (obj == NULL)
     {
         return 1;
     }
-    self = (struct avcodec_mpeg2*)malloc(sizeof(struct avcodec_mpeg2));
+    avcodec_id = 0;
+    switch (codec_id)
+    {
+        case VIDEO_CODEC_ID_MPEG2:
+            avcodec_id = CODEC_ID_MPEG2VIDEO;
+            break;
+        default:
+            return 6;
+    }
+    self = (struct avcodec_video*)malloc(sizeof(struct avcodec_video));
     if (self == NULL)
     {
         return 2;
     }
-    memset(self, 0, sizeof(struct avcodec_mpeg2));
+    memset(self, 0, sizeof(struct avcodec_video));
     self->codec_context = AVCODEC_ALLOC_CONTEXT;
     if (self->codec_context == NULL)
     {
         free(self);
         return 3;
     }
-    self->codec = avcodec_find_decoder(CODEC_ID_MPEG2VIDEO);
+    self->codec = avcodec_find_decoder(avcodec_id);
     if (self->codec == NULL)
     {
         avcodec_close(self->codec_context);
@@ -465,11 +487,11 @@ hdhome_run_avcodec_mpeg2_create(void** obj)
 
 /*****************************************************************************/
 int
-hdhome_run_avcodec_mpeg2_delete(void* obj)
+hdhome_run_avcodec_video_delete(void* obj)
 {
-    struct avcodec_mpeg2* self;
+    struct avcodec_video* self;
 
-    self = (struct avcodec_mpeg2*)obj;
+    self = (struct avcodec_video*)obj;
     if (self == NULL)
     {
         return 0;
@@ -485,16 +507,16 @@ hdhome_run_avcodec_mpeg2_delete(void* obj)
 
 /*****************************************************************************/
 int
-hdhome_run_avcodec_mpeg2_decode(void* obj, void* cdata, int cdata_bytes,
+hdhome_run_avcodec_video_decode(void* obj, void* cdata, int cdata_bytes,
                                 int* cdata_bytes_processed, int* decoded)
 {
-    struct avcodec_mpeg2* self;
+    struct avcodec_video* self;
     int len;
     int bytes_processed;
     unsigned char* src;
     int src_size;
 
-    self = (struct avcodec_mpeg2*)obj;
+    self = (struct avcodec_video*)obj;
     if (self == NULL)
     {
         return 1;
@@ -530,15 +552,15 @@ hdhome_run_avcodec_mpeg2_decode(void* obj, void* cdata, int cdata_bytes,
 
 /*****************************************************************************/
 int
-hdhome_run_avcodec_mpeg2_decode(void* obj, void* cdata, int cdata_bytes,
+hdhome_run_avcodec_video_decode(void* obj, void* cdata, int cdata_bytes,
                                 int* cdata_bytes_processed, int* decoded)
 {
-    struct avcodec_mpeg2* self;
+    struct avcodec_video* self;
     AVPacket pkt;
     int len;
     int bytes_processed;
 
-    self = (struct avcodec_mpeg2*)obj;
+    self = (struct avcodec_video*)obj;
     if (self == NULL)
     {
         return 1;
@@ -578,13 +600,13 @@ hdhome_run_avcodec_mpeg2_decode(void* obj, void* cdata, int cdata_bytes,
 
 /*****************************************************************************/
 int
-hdhome_run_avcodec_mpeg2_get_frame_info(void* obj, int* width, int* height,
+hdhome_run_avcodec_video_get_frame_info(void* obj, int* width, int* height,
                                         int* format, int* bytes)
 {
-    struct avcodec_mpeg2* self;
+    struct avcodec_video* self;
     int frame_size;
 
-    self = (struct avcodec_mpeg2*)obj;
+    self = (struct avcodec_video*)obj;
     if (self == NULL)
     {
         return 1;
@@ -601,12 +623,12 @@ hdhome_run_avcodec_mpeg2_get_frame_info(void* obj, int* width, int* height,
 
 /*****************************************************************************/
 int
-hdhome_run_avcodec_mpeg2_get_frame_data(void* obj, void* data, int data_bytes)
+hdhome_run_avcodec_video_get_frame_data(void* obj, void* data, int data_bytes)
 {
-    struct avcodec_mpeg2* self;
+    struct avcodec_video* self;
     AVFrame* frame;
 
-    self = (struct avcodec_mpeg2*)obj;
+    self = (struct avcodec_video*)obj;
     if (self == NULL)
     {
         return 1;
@@ -624,4 +646,3 @@ hdhome_run_avcodec_mpeg2_get_frame_data(void* obj, void* data, int data_bytes)
     AVCODEC_FREE_FRAME(&frame);
     return 0;
 }
-
