@@ -293,14 +293,15 @@ static int
 add_main_to_worker_video_item(struct video_audio_info* vai,
                               struct main_to_worker_video_item* mtwvi)
 {
+    pthread_mutex_lock(vai->mutex);
     if (vai->main_to_worker_video_bytes > 100 * 1024 * 1024)
     {
+        pthread_mutex_unlock(vai->mutex);
         LLOGLN(0, ("add_main_to_worker_video_item: "
                "main_to_worker_video_bytes %d",
                vai->main_to_worker_video_bytes));
         return 1;
     }
-    pthread_mutex_lock(vai->mutex);
     list_add_item(vai->main_to_worker_video_list, (long)mtwvi);
     vai->main_to_worker_video_bytes += mtwvi->data_bytes;
     pthread_mutex_unlock(vai->mutex);
@@ -331,14 +332,15 @@ static int
 add_worker_to_main_video_item(struct video_audio_info* vai,
                               struct worker_to_main_video_item* wtmvi)
 {
+    pthread_mutex_lock(vai->mutex);
     if (vai->worker_to_main_video_bytes > 100 * 1024 * 1024)
     {
+        pthread_mutex_unlock(vai->mutex);
         LLOGLN(0, ("add_worker_to_main_video_item: "
                "worker_to_main_video_bytes %d",
                vai->worker_to_main_video_bytes));
         return 1;
     }
-    pthread_mutex_lock(vai->mutex);
     list_add_item(vai->worker_to_main_video_list, (long)wtmvi);
     vai->worker_to_main_video_bytes += wtmvi->data_bytes;
     pthread_mutex_unlock(vai->mutex);
@@ -369,14 +371,15 @@ static int
 add_main_to_worker_audio_item(struct video_audio_info* vai,
                               struct main_to_worker_audio_item* mtwai)
 {
+    pthread_mutex_lock(vai->mutex);
     if (vai->main_to_worker_audio_bytes > 100 * 1024 * 1024)
     {
+        pthread_mutex_unlock(vai->mutex);
         LLOGLN(0, ("add_main_to_worker_audio_item: "
                "main_to_worker_audio_bytes %d",
                vai->main_to_worker_audio_bytes));
         return 1;
     }
-    pthread_mutex_lock(vai->mutex);
     list_add_item(vai->main_to_worker_audio_list, (long)mtwai);
     vai->main_to_worker_audio_bytes += mtwai->data_bytes;
     pthread_mutex_unlock(vai->mutex);
@@ -584,18 +587,18 @@ decode_and_present_audio(struct video_audio_info* vai,
         cdata_bytes -= cdata_bytes_processed;
         if (decoded)
         {
-            error =  hdhome_run_avcodec_audio_get_frame_info(ai->ac3_handle,
-                                                             &channels,
-                                                             &format,
-                                                             &out_data_bytes);
+            error = hdhome_run_avcodec_audio_get_frame_info(ai->ac3_handle,
+                                                            &channels,
+                                                            &format,
+                                                            &out_data_bytes);
             if ((error == 0) && (out_data_bytes > 0))
             {
                 out_data = malloc(out_data_bytes);
                 if (out_data != NULL)
                 {
-                    error =  hdhome_run_avcodec_audio_get_frame_data(ai->ac3_handle,
-                                                                     out_data,
-                                                                     out_data_bytes);
+                    error = hdhome_run_avcodec_audio_get_frame_data(ai->ac3_handle,
+                                                                    out_data,
+                                                                    out_data_bytes);
                     if (error == 0)
                     {
                         if (ai->pa_handle == NULL)
