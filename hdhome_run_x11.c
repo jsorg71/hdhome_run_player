@@ -92,10 +92,10 @@ hdhome_run_x11_init(void)
     black = BlackPixel(g_disp, g_screenNumber);
     g_win = XCreateSimpleWindow(g_disp, DefaultRootWindow(g_disp),
                                 50, 50, 800, 600, 0, black, white);
-    XMapWindow(g_disp, g_win);
     g_eventMask = StructureNotifyMask | MapNotify | VisibilityChangeMask |
                   ButtonPressMask | ButtonReleaseMask | KeyPressMask;
     XSelectInput(g_disp, g_win, g_eventMask);
+    XMapWindow(g_disp, g_win);
     XMaskEvent(g_disp, VisibilityNotify, &evt);
     g_disp_fd = ConnectionNumber(g_disp);
     ret = XvQueryExtension(g_disp, &version, &release, &request_base,
@@ -103,6 +103,7 @@ hdhome_run_x11_init(void)
     if (ret != Success)
     {
         LLOGLN(0, ("XvQueryExtension failedd"));
+        return 2;
     }
     g_xv_event_base = event_base;
     ret = XvQueryAdaptors(g_disp, DefaultRootWindow(g_disp), &num_adaptors,
@@ -110,8 +111,8 @@ hdhome_run_x11_init(void)
     if (ret != Success)
     {
         LLOGLN(0, ("XvQueryAdaptors failed"));
+        return 3;
     }
-
     for (index = 0; index < num_adaptors; index++)
     {
         if (g_xv_port == 0 && index == num_adaptors - 1)
@@ -119,11 +120,9 @@ hdhome_run_x11_init(void)
             g_xv_port = ai[index].base_id;
         }
     }
-
+    XvFreeAdaptorInfo(ai);
     g_gc = XCreateGC(g_disp, g_win, 0, NULL);
-
     XFlush(g_disp);
-
     return 0;
 }
 
