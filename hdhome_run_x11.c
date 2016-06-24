@@ -63,6 +63,8 @@ static int g_xv_shmbytes = 0;
 static int g_vwidth = 0;
 static int g_vheight = 0;
 
+static int g_got_vis_not = 0;
+
 /*****************************************************************************/
 int
 hdhome_run_x11_init(void)
@@ -78,7 +80,6 @@ hdhome_run_x11_init(void)
     unsigned int request_base;
     unsigned int num_adaptors;
     XvAdaptorInfo* ai;
-    XEvent evt;
 
     LLOGLN(0, ("hdhomerun_x11_init:"));
     g_disp = XOpenDisplay(NULL);
@@ -87,17 +88,16 @@ hdhome_run_x11_init(void)
         LLOGLN(0, ("error opening X display"));
         return 1;
     }
+    g_disp_fd = ConnectionNumber(g_disp);
     g_screenNumber = DefaultScreen(g_disp);
     white = WhitePixel(g_disp, g_screenNumber);
     black = BlackPixel(g_disp, g_screenNumber);
     g_win = XCreateSimpleWindow(g_disp, DefaultRootWindow(g_disp),
                                 50, 50, 800, 600, 0, black, white);
-    g_eventMask = StructureNotifyMask | MapNotify | VisibilityChangeMask |
+    g_eventMask = StructureNotifyMask | VisibilityChangeMask |
                   ButtonPressMask | ButtonReleaseMask | KeyPressMask;
     XSelectInput(g_disp, g_win, g_eventMask);
     XMapWindow(g_disp, g_win);
-    XMaskEvent(g_disp, VisibilityNotify, &evt);
-    g_disp_fd = ConnectionNumber(g_disp);
     ret = XvQueryExtension(g_disp, &version, &release, &request_base,
                            &event_base, &error_base);
     if (ret != Success)
@@ -170,6 +170,13 @@ hdhome_run_x11_show_buffer(int width, int height, int format,
     int ratio;
 
     LLOGLN(10, ("hdhome_run_x11_show_buffer:"));
+
+    if (g_got_vis_not == 0)
+    {
+        LLOGLN(0, ("hdhome_run_x11_show_buffer: g_got_vis_not is false"));
+        return 1;
+    }
+
     switch (format)
     {
         //dst_pixfmt = 0x30323449; /* I420 */
@@ -290,7 +297,12 @@ hdhome_run_x11_main_loop(int* sck, tmlcb* cb, int count, void* udata,
                 XNextEvent(g_disp, &evt);
                 switch (evt.type)
                 {
+                    case MapNotify:
+                        LLOGLN(10, ("hdhome_run_x11_main_loop: MapNotify"));
+                        break;
                     case VisibilityNotify:
+                        LLOGLN(10, ("hdhome_run_x11_main_loop: VisibilityNotify"));
+                        g_got_vis_not = 1;
                         break;
                     case KeyPress:
                         break;
