@@ -573,6 +573,7 @@ hdhome_run_avcodec_video_decode(void* obj, void* cdata, int cdata_bytes,
     pkt.size = cdata_bytes;
     while (pkt.size > 0)
     {
+        LLOGLN(10, ("hdhome_run_avcodec_video_decode: pkt.size %d", pkt.size));
         len = avcodec_decode_video2(self->codec_context,
                                     self->frame,
                                     decoded, &pkt);
@@ -590,6 +591,7 @@ hdhome_run_avcodec_video_decode(void* obj, void* cdata, int cdata_bytes,
             av_free_packet(&pkt);
             return 0;
         }
+        LLOGLN(10, ("hdhome_run_avcodec_video_decode: pkt.size %d", pkt.size));
     }
     *cdata_bytes_processed = bytes_processed;
     av_free_packet(&pkt);
