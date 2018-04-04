@@ -246,7 +246,7 @@ hdhome_run_x11_main_loop(int* sck, tmlcb* cb, int count, void* udata,
     struct timeval time;
 
     LLOGLN(0, ("hdhome_run_x11_main_loop:"));
-    mstimeout = 100;
+    mstimeout = 15;
     error = 0;
     cont = 1;
     while (cont)
@@ -265,10 +265,13 @@ hdhome_run_x11_main_loop(int* sck, tmlcb* cb, int count, void* udata,
         }
         for (index = 0; index < count; index++)
         {
-            FD_SET(sck[index], &rfds_set);
-            if (sck[index] > max_fd)
+            if (sck[index] != -1)
             {
-                max_fd = sck[index];
+                FD_SET(sck[index], &rfds_set);
+                if (sck[index] > max_fd)
+                {
+                    max_fd = sck[index];
+                }
             }
         }
         time.tv_sec = mstimeout / 1000;

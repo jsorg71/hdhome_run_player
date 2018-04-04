@@ -1,5 +1,5 @@
 
-OBJS = hdhome_run_player.o mpeg_ts.o hdhome_run_x11.o hdhome_run_pa.o list.o hdhome_run_avcodec.o
+OBJS = hdhome_run_player.o mpeg_ts.o hdhome_run_x11.o hdhome_run_pa.o list.o hdhome_run_mycodec.o
 
 CFLAGS = -Wall -O2 -g -I/usr/lib/libhdhomerun -I/usr/include/libhdhomerun -I/home/jay/hdhome_run/libhdhomerun
 

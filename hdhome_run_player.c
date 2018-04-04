@@ -28,7 +28,7 @@
 #include "hdhome_run_x11.h"
 #include "hdhome_run_pa.h"
 #include "list.h"
-#include "hdhome_run_avcodec.h"
+#include "hdhome_run_codec.h"
 
 #define HD_AUDIO_MSDELAY 1000
 #define MSTIME_HISTORY 4000
@@ -297,7 +297,7 @@ add_main_to_worker_video_item(struct video_audio_info* vai,
     if (vai->main_to_worker_video_bytes > 100 * 1024 * 1024)
     {
         pthread_mutex_unlock(vai->mutex);
-        LLOGLN(0, ("add_main_to_worker_video_item: "
+        LLOGLN(10, ("add_main_to_worker_video_item: "
                "main_to_worker_video_bytes %d",
                vai->main_to_worker_video_bytes));
         return 1;
@@ -410,10 +410,10 @@ decode_video_and_send_back(struct video_audio_info* vai,
     vi = vai->vi;
     while (cdata_bytes > 0)
     {
-        error = hdhome_run_avcodec_video_decode(vi->mpeg2_handle,
-                                                cdata, cdata_bytes,
-                                                &cdata_bytes_processed,
-                                                &decoded);
+        error = hdhome_run_codec_video_decode(vi->mpeg2_handle,
+                                              cdata, cdata_bytes,
+                                              &cdata_bytes_processed,
+                                              &decoded);
         if (error != 0)
         {
             LLOGLN(0, ("decode_video_and_send_back: error decoding %d",
@@ -424,18 +424,18 @@ decode_video_and_send_back(struct video_audio_info* vai,
         cdata_bytes -= cdata_bytes_processed;
         if (decoded)
         {
-            error = hdhome_run_avcodec_video_get_frame_info(vi->mpeg2_handle,
-                                                            &width, &height,
-                                                            &format,
-                                                            &out_data_bytes);
+            error = hdhome_run_codec_video_get_frame_info(vi->mpeg2_handle,
+                                                          &width, &height,
+                                                          &format,
+                                                          &out_data_bytes);
             if (error == 0)
             {
                 out_data = (unsigned char*)malloc(out_data_bytes);
                 if (out_data != NULL)
                 {
-                    error = hdhome_run_avcodec_video_get_frame_data(vi->mpeg2_handle,
-                                                                    out_data,
-                                                                    out_data_bytes);
+                    error = hdhome_run_codec_video_get_frame_data(vi->mpeg2_handle,
+                                                                  out_data,
+                                                                  out_data_bytes);
                     if (error == 0)
                     {
                         wtmvi = (struct worker_to_main_video_item*)
@@ -574,10 +574,10 @@ decode_and_present_audio(struct video_audio_info* vai,
     ai = vai->ai;
     while (cdata_bytes > 0)
     {
-        error = hdhome_run_avcodec_audio_decode(ai->ac3_handle,
-                                                cdata, cdata_bytes,
-                                                &cdata_bytes_processed,
-                                                &decoded);
+        error = hdhome_run_codec_audio_decode(ai->ac3_handle,
+                                              cdata, cdata_bytes,
+                                              &cdata_bytes_processed,
+                                              &decoded);
         if (error != 0)
         {
             LLOGLN(0, ("decode_and_present_audio: error decoding %d", error));
@@ -587,18 +587,18 @@ decode_and_present_audio(struct video_audio_info* vai,
         cdata_bytes -= cdata_bytes_processed;
         if (decoded)
         {
-            error = hdhome_run_avcodec_audio_get_frame_info(ai->ac3_handle,
-                                                            &channels,
-                                                            &format,
-                                                            &out_data_bytes);
+            error = hdhome_run_codec_audio_get_frame_info(ai->ac3_handle,
+                                                          &channels,
+                                                          &format,
+                                                          &out_data_bytes);
             if ((error == 0) && (out_data_bytes > 0))
             {
                 out_data = malloc(out_data_bytes);
                 if (out_data != NULL)
                 {
-                    error = hdhome_run_avcodec_audio_get_frame_data(ai->ac3_handle,
-                                                                    out_data,
-                                                                    out_data_bytes);
+                    error = hdhome_run_codec_audio_get_frame_data(ai->ac3_handle,
+                                                                  out_data,
+                                                                  out_data_bytes);
                     if (error == 0)
                     {
                         if (ai->pa_handle == NULL)
@@ -1101,6 +1101,7 @@ hdhome_run_callback(int sck, void* udata)
     int lbytes;
     struct mlcb_info* mlcbi;
 
+    LLOGLN(10, ("hdhome_run_callback"));
     mlcbi = (struct mlcb_info*)udata;
     error = 0;
     bytes = 32 * 1024;
@@ -1176,8 +1177,6 @@ int
 main(int argc, char** argv)
 {
     struct hdhomerun_device_t* hdhr;
-    struct hdhomerun_video_sock_t* hdhr_vsck;
-    hdhomerun_sock_t hdhr_sck;
     const char* dev_name;
     int error;
     struct tmpegts_cb cb;
@@ -1263,9 +1262,9 @@ main(int argc, char** argv)
         LLOGLN(0, ("list_create failed"));
         return 1;
     }
-    if (hdhome_run_avcodec_init() != 0)
+    if (hdhome_run_codec_init() != 0)
     {
-        LLOGLN(0, ("hdhome_run_avcodec_init failed"));
+        LLOGLN(0, ("hdhome_run_codec_init failed"));
         return 1;
     }
     if (hdhome_run_x11_init() != 0)
@@ -1273,23 +1272,23 @@ main(int argc, char** argv)
         LLOGLN(0, ("hdhome_run_x11_init failed"));
         return 1;
     }
-    error = hdhome_run_avcodec_audio_create(&(ai.ac3_handle), AUDIO_CODEC_ID_AC3);
+    error = hdhome_run_codec_audio_create(&(ai.ac3_handle), AUDIO_CODEC_ID_AC3);
     if (error != 0)
     {
-        LLOGLN(0, ("hdhome_run_avcodec_ac3_create failed error %d", error));
+        LLOGLN(0, ("hdhome_run_codec_ac3_create failed error %d", error));
     }
-    error = hdhome_run_avcodec_video_create(&(vi.mpeg2_handle), VIDEO_CODEC_ID_MPEG2);
+    error = hdhome_run_codec_video_create(&(vi.mpeg2_handle), VIDEO_CODEC_ID_MPEG2);
     if (error != 0)
     {
-        LLOGLN(0, ("hdhome_run_avcodec_mpeg2_create failed error %d", error));
+        LLOGLN(0, ("hdhome_run_codec_mpeg2_create failed error %d", error));
     }
-    hdhr = hdhomerun_device_create(HDHOMERUN_DEVICE_ID_WILDCARD, 0, 0, 0);
-    //hdhr = hdhomerun_device_create(HDHOMERUN_DEVICE_ID_WILDCARD, 0x0a00000b, 0, 0);
+    //hdhr = hdhomerun_device_create(HDHOMERUN_DEVICE_ID_WILDCARD, 0, 0, 0);
+    //hdhr = hdhomerun_device_create(HDHOMERUN_DEVICE_ID_WILDCARD, 0x0a00000e, 0, 0);
+    hdhr = hdhomerun_device_create_from_str("1020B660-0", 0);
+    //hdhr = hdhomerun_device_create_from_str("103BF3FB-0", 0);
     //hdhr = hdhomerun_device_create_from_str("103BF3FB-1", 0);
     if (hdhr != NULL)
     {
-        hdhr_vsck = hdhomerun_device_get_video_sock(hdhr);
-        hdhr_sck = hdhomerun_video_get_sock(hdhr_vsck);
         dev_name = hdhomerun_device_get_name(hdhr);
         LLOGLN(0, ("opened device %s", dev_name));
         error = hdhomerun_device_stream_start(hdhr);
@@ -1305,7 +1304,7 @@ main(int argc, char** argv)
                 LLOGLN(0, ("pipe failed"));
                 return 1;
             }
-            scks[0] = hdhr_sck;
+            scks[0] = -1;
             mlcbs[0] = hdhome_run_callback;
             scks[1] = vai.worker_to_main_video_pipe[0];
             mlcbs[1] = video_callback;
