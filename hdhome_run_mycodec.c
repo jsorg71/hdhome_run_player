@@ -42,11 +42,13 @@
 struct mycodec_audio
 {
     a52_state_t* state;
+    sample_t* samples;
     int frame_size;
     int flags;
     int sample_rate;
     int channels;
     int bit_rate;
+    int pad0;
 };
 
 struct mycodec_video
@@ -86,6 +88,13 @@ hdhome_run_codec_audio_create(void** obj, int codec_id)
         free(self);
         return 4;
     }
+    self->samples = a52_samples(self->state);
+    if (self->samples == NULL)
+    {
+        a52_free(self->state);
+        free(self);
+        return 5;
+    }
     *obj = self;
     return 0;
 }
@@ -108,6 +117,43 @@ hdhome_run_codec_audio_delete(void* obj)
 
 static const int g_ac3_channels[8] = { 2, 1, 2, 3, 3, 4, 4, 5 };
 
+/**** the following two functions comes from a52dec */
+/*****************************************************************************/
+static int
+blah(int32_t i)
+{
+    if (i > 0x43c07fff)
+    {
+        return 32767;
+    }
+    else if (i < 0x43bf8000)
+    {
+        return -32768;
+    }
+    return i - 0x43c00000;
+}
+
+/*****************************************************************************/
+static void
+float_to_short(float* in_float, int16_t* out_i16, int nchannels)
+{
+    int i;
+    int j;
+    int c;
+    int32_t* f;
+
+    f = (int32_t*)in_float;     /* XXX assumes IEEE float format */
+    j = 0;
+    nchannels *= 256;
+    for (i = 0; i < 256; i++)
+    {
+        for (c = 0; c < nchannels; c += 256)
+        {
+            out_i16[j++] = blah(f[i + c]);
+        }
+    }
+}
+
 /*****************************************************************************/
 int
 hdhome_run_codec_audio_decode(void* obj, void* cdata, int cdata_bytes,
@@ -119,10 +165,10 @@ hdhome_run_codec_audio_decode(void* obj, void* cdata, int cdata_bytes,
     int sample_rate;
     int bit_rate;
     int len;
-    int index;
     float level;
 
-    LLOGLN(0, ("hdhome_run_codec_audio_decode:"));
+    LLOGLN(10, ("hdhome_run_codec_audio_decode:"));
+    LLOGLN(10, ("hdhome_run_codec_audio_decode: cdata_bytes %d", cdata_bytes));
     self = (struct mycodec_audio*)obj;
     cdata8 = (uint8_t*)cdata;
     if (self->frame_size == 0)
@@ -146,6 +192,9 @@ hdhome_run_codec_audio_decode(void* obj, void* cdata, int cdata_bytes,
                 self->channels++;
             }
             self->bit_rate = bit_rate;
+            LLOGLN(0, ("hdhome_run_codec_audio_decode: frame_size %d "
+                   "channels %d sample_rate %d",
+                   self->frame_size, self->channels, self->sample_rate));
         }
     }
     else if (cdata_bytes >= self->frame_size)
@@ -168,14 +217,6 @@ hdhome_run_codec_audio_decode(void* obj, void* cdata, int cdata_bytes,
         {
             return 2;
         }
-        for (index = 0; index < 6; index++)
-        {
-            if (a52_block(self->state))
-            {
-                return 3;
-            }
-            //float_to_int();
-        }
         *decoded = 1;
         *cdata_bytes_processed = self->frame_size;
     }
@@ -192,6 +233,7 @@ hdhome_run_codec_audio_get_frame_info(void* obj, int* channels, int* format,
     self = (struct mycodec_audio*)obj;
     *channels = self->channels;
     *format = 0;
+    *bytes = 6 * 256 * self->channels * 2;
     return 0;
 }
 
@@ -199,6 +241,22 @@ hdhome_run_codec_audio_get_frame_info(void* obj, int* channels, int* format,
 int
 hdhome_run_codec_audio_get_frame_data(void* obj, void* data, int data_bytes)
 {
+    struct mycodec_audio* self;
+    int index;
+    short* out_samples;
+
+    self = (struct mycodec_audio*)obj;
+    out_samples = (short*)data;
+    for (index = 0; index < 6; index++)
+    {
+        if (a52_block(self->state))
+        {
+            return 1;
+        }
+        float_to_short(self->samples,
+                       out_samples + index * 256 * self->channels,
+                       self->channels);
+    }
     return 0;
 }
 
@@ -206,6 +264,28 @@ hdhome_run_codec_audio_get_frame_data(void* obj, void* data, int data_bytes)
 int
 hdhome_run_codec_video_create(void** obj, int codec_id)
 {
+    struct mycodec_video* self;
+
+    if (obj == NULL)
+    {
+        return 1;
+    }
+    if (codec_id != VIDEO_CODEC_ID_MPEG2)
+    {
+        return 2;
+    }
+    self = (struct mycodec_video*)calloc(sizeof(struct mycodec_video), 1);
+    if (self == NULL)
+    {
+        return 3;
+    }
+    self->dec = mpeg2_init();
+    if (self->dec == NULL)
+    {
+        free(self);
+        return 4;
+    }
+    *obj = self;
     return 0;
 }
 
@@ -213,6 +293,15 @@ hdhome_run_codec_video_create(void** obj, int codec_id)
 int
 hdhome_run_codec_video_delete(void* obj)
 {
+    struct mycodec_video* self;
+
+    if (obj == NULL)
+    {
+        return 0;
+    }
+    self = (struct mycodec_video*)obj;
+    mpeg2_close(self->dec);
+    free(self);
     return 0;
 }
 
@@ -221,7 +310,9 @@ int
 hdhome_run_codec_video_decode(void* obj, void* cdata, int cdata_bytes,
                               int* cdata_bytes_processed, int* decoded)
 {
-    LLOGLN(0, ("hdhome_run_codec_video_decode:"));
+    LLOGLN(10, ("hdhome_run_codec_video_decode:"));
+    LLOGLN(10, ("hdhome_run_codec_video_decode: cdata_bytes %d", cdata_bytes));
+    *cdata_bytes_processed = cdata_bytes;
     return 0;
 }
 

@@ -5,7 +5,7 @@ CFLAGS = -Wall -O2 -g -I/usr/lib/libhdhomerun -I/usr/include/libhdhomerun -I/hom
 
 LDFLAGS = -L/home/jay/hdhome_run/libhdhomerun
 
-LIBS = -lhdhomerun -lX11 -lXv -lXext -lm -ldl -lpthread -lpulse -la52
+LIBS = -lhdhomerun -lX11 -lXv -lXext -lm -ldl -lpthread -lpulse -la52 -lmpeg2
 
 all: hdhome_run_player
 
