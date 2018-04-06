@@ -48,7 +48,8 @@ struct mycodec_audio
     int sample_rate;
     int channels;
     int bit_rate;
-    int pad0;
+    int cdata_bytes;;
+    uint8_t* cdata;
 };
 
 struct mycodec_video
@@ -94,7 +95,7 @@ hdhome_run_codec_audio_create(void** obj, int codec_id)
         a52_free(self->state);
         free(self);
         return 5;
-    }
+    }    
     *obj = self;
     return 0;
 }
@@ -111,6 +112,7 @@ hdhome_run_codec_audio_delete(void* obj)
     }
     self = (struct mycodec_audio*)obj;
     a52_free(self->state);
+    free(self->cdata);
     free(self);
     return 0;
 }
@@ -160,7 +162,6 @@ hdhome_run_codec_audio_decode(void* obj, void* cdata, int cdata_bytes,
                               int* cdata_bytes_processed, int* decoded)
 {
     struct mycodec_audio* self;
-    uint8_t* cdata8;
     int flags;
     int sample_rate;
     int bit_rate;
@@ -169,36 +170,58 @@ hdhome_run_codec_audio_decode(void* obj, void* cdata, int cdata_bytes,
 
     LLOGLN(10, ("hdhome_run_codec_audio_decode:"));
     LLOGLN(10, ("hdhome_run_codec_audio_decode: cdata_bytes %d", cdata_bytes));
+    *decoded = 0;
+    *cdata_bytes_processed = 0;
     self = (struct mycodec_audio*)obj;
-    cdata8 = (uint8_t*)cdata;
     if (self->frame_size == 0)
     {
-        /* lookign for header */
-        sample_rate = 0;
-        bit_rate = 0;
-        len = a52_syncinfo(cdata8, &flags, &sample_rate, &bit_rate);
-        if (len == 0)
+        if (cdata_bytes >= 7)
         {
-            return 1;
-        }
-        else
-        {
-            self->flags = flags;
-            self->frame_size = len;
-            self->sample_rate = sample_rate;
-            self->channels = g_ac3_channels[self->flags & 7];
-            if (self->flags & A52_LFE)
+            /* lookign for header */
+            flags = 0;
+            sample_rate = 0;
+            bit_rate = 0;
+            len = a52_syncinfo((uint8_t*)cdata, &flags, &sample_rate, &bit_rate);
+            if (len == 0)
             {
-                self->channels++;
+                return 1;
             }
-            self->bit_rate = bit_rate;
-            LLOGLN(0, ("hdhome_run_codec_audio_decode: frame_size %d "
-                   "channels %d sample_rate %d",
-                   self->frame_size, self->channels, self->sample_rate));
+            else
+            {
+                self->flags = flags;
+                self->frame_size = len;
+                self->sample_rate = sample_rate;
+                self->channels = g_ac3_channels[self->flags & 7];
+                if (self->flags & A52_LFE)
+                {
+                    self->channels++;
+                }
+                self->bit_rate = bit_rate;
+                LLOGLN(0, ("hdhome_run_codec_audio_decode: frame_size %d "
+                       "channels %d sample_rate %d",
+                       self->frame_size, self->channels, self->sample_rate));
+                self->cdata = (uint8_t*)malloc(len);
+                if (self->cdata == NULL)
+                {
+                    return 2;
+                }
+                self->cdata_bytes = 0;
+                return 0;
+            }
         }
+        return 3;
     }
-    else if (cdata_bytes >= self->frame_size)
+    len = self->frame_size - self->cdata_bytes;
+    if (len > cdata_bytes)
     {
+        len = cdata_bytes;
+    }
+    memcpy(self->cdata + self->cdata_bytes, cdata, len);
+    self->cdata_bytes += len;
+    *cdata_bytes_processed = len;
+    if (self->cdata_bytes >= self->frame_size)
+    {
+        self->cdata_bytes = 0;
         flags = self->flags;
         if (self->channels == 1)
         {
@@ -213,12 +236,11 @@ hdhome_run_codec_audio_decode(void* obj, void* cdata, int cdata_bytes,
             flags |= A52_ADJUST_LEVEL;
         }
         level = 1;
-        if (a52_frame(self->state, cdata8, &flags, &level, 384))
+        if (a52_frame(self->state, self->cdata, &flags, &level, 384))
         {
-            return 2;
+            return 4;
         }
         *decoded = 1;
-        *cdata_bytes_processed = self->frame_size;
     }
     return 0;
 }
@@ -261,6 +283,40 @@ hdhome_run_codec_audio_get_frame_data(void* obj, void* data, int data_bytes)
 }
 
 /*****************************************************************************/
+static void*
+malloc_hook(unsigned size, mpeg2_alloc_t reason)
+{
+    void* buf;
+
+    LLOGLN(10, ("malloc_hook:"));
+    /*
+     * Invalid streams can refer to fbufs that have not been
+     * initialized yet. For example the stream could start with a
+     * picture type onther than I. Or it could have a B picture before
+     * it gets two reference frames. Or, some slices could be missing.
+     *
+     * Consequently, the output depends on the content 2 output
+     * buffers have when the sequence begins. In release builds, this
+     * does not matter (garbage in, garbage out), but in test code, we
+     * always zero all our output buffers to:
+     * - make our test produce deterministic outputs
+     * - hint checkergcc that it is fine to read from all our output
+     *   buffers at any time
+     */
+    if ((int)reason < 0)
+    {
+        return NULL;
+    }
+    buf = mpeg2_malloc(size, (mpeg2_alloc_t)-1);
+    if (buf && ((reason == MPEG2_ALLOC_YUV) ||
+                (reason == MPEG2_ALLOC_CONVERTED)))
+    {
+        memset(buf, 0, size);
+    }
+    return buf;
+}
+
+/*****************************************************************************/
 int
 hdhome_run_codec_video_create(void** obj, int codec_id)
 {
@@ -285,6 +341,7 @@ hdhome_run_codec_video_create(void** obj, int codec_id)
         free(self);
         return 4;
     }
+    mpeg2_malloc_hooks(malloc_hook, NULL);
     *obj = self;
     return 0;
 }
@@ -306,12 +363,68 @@ hdhome_run_codec_video_delete(void* obj)
 }
 
 /*****************************************************************************/
+static void
+decode_mpeg2(struct mycodec_video* self, uint8_t* start, uint8_t* end)
+{
+    const mpeg2_info_t* info;
+    mpeg2_state_t state;
+
+    LLOGLN(10, ("decode_mpeg2:"));
+    mpeg2_buffer(self->dec, start, end);
+    info = mpeg2_info(self->dec);
+    while (1)
+    {
+        
+        uint8_t * buf[3];
+		void * id;
+        
+        state = mpeg2_parse(self->dec);
+        LLOGLN(10, ("decode_mpeg2: state %d", state));
+        switch (state)
+        {
+            case STATE_BUFFER:
+                LLOGLN(10, ("decode_mpeg2: STATE_BUFFER"));
+                return;
+            case STATE_SEQUENCE:
+                LLOGLN(10, ("decode_mpeg2: STATE_SEQUENCE"));
+                //mpeg2_custom_fbuf(self->dec, 1);
+                //id = malloc(1024 * 1024 * 3);
+                //mpeg2_set_buf(self->dec, buf, id);
+                //mpeg2_set_buf(self->dec, buf, id);
+                //mpeg2_set_buf(self->dec, buf, id);
+                break;
+            case STATE_PICTURE:
+                LLOGLN(10, ("decode_mpeg2: STATE_PICTURE"));
+                break;
+            case STATE_SLICE:
+            case STATE_END:
+            case STATE_INVALID_END:
+                if (info->display_fbuf)
+                {
+                    LLOGLN(10, ("decode_mpeg2: display_fbuf set"));
+                }
+                break;
+            default:
+                break;
+        }
+    }
+}
+
+/*****************************************************************************/
 int
 hdhome_run_codec_video_decode(void* obj, void* cdata, int cdata_bytes,
                               int* cdata_bytes_processed, int* decoded)
 {
+    struct mycodec_video* self;
+    uint8_t* start;
+    uint8_t* end;
+    
     LLOGLN(10, ("hdhome_run_codec_video_decode:"));
     LLOGLN(10, ("hdhome_run_codec_video_decode: cdata_bytes %d", cdata_bytes));
+    self = (struct mycodec_video*)obj;
+    start = (uint8_t*)cdata;
+    end = start + cdata_bytes;
+    decode_mpeg2(self, start, end);
     *cdata_bytes_processed = cdata_bytes;
     return 0;
 }
