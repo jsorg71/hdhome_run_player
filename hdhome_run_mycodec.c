@@ -55,6 +55,10 @@ struct mycodec_audio
 struct mycodec_video
 {
     mpeg2dec_t* dec;
+    int width;
+    int height;
+    int got_frame;
+    mpeg2_fbuf_t frame;
 };
 
 /*****************************************************************************/
@@ -283,40 +287,6 @@ hdhome_run_codec_audio_get_frame_data(void* obj, void* data, int data_bytes)
 }
 
 /*****************************************************************************/
-static void*
-malloc_hook(unsigned size, mpeg2_alloc_t reason)
-{
-    void* buf;
-
-    LLOGLN(10, ("malloc_hook:"));
-    /*
-     * Invalid streams can refer to fbufs that have not been
-     * initialized yet. For example the stream could start with a
-     * picture type onther than I. Or it could have a B picture before
-     * it gets two reference frames. Or, some slices could be missing.
-     *
-     * Consequently, the output depends on the content 2 output
-     * buffers have when the sequence begins. In release builds, this
-     * does not matter (garbage in, garbage out), but in test code, we
-     * always zero all our output buffers to:
-     * - make our test produce deterministic outputs
-     * - hint checkergcc that it is fine to read from all our output
-     *   buffers at any time
-     */
-    if ((int)reason < 0)
-    {
-        return NULL;
-    }
-    buf = mpeg2_malloc(size, (mpeg2_alloc_t)-1);
-    if (buf && ((reason == MPEG2_ALLOC_YUV) ||
-                (reason == MPEG2_ALLOC_CONVERTED)))
-    {
-        memset(buf, 0, size);
-    }
-    return buf;
-}
-
-/*****************************************************************************/
 int
 hdhome_run_codec_video_create(void** obj, int codec_id)
 {
@@ -341,7 +311,6 @@ hdhome_run_codec_video_create(void** obj, int codec_id)
         free(self);
         return 4;
     }
-    mpeg2_malloc_hooks(malloc_hook, NULL);
     *obj = self;
     return 0;
 }
@@ -357,41 +326,37 @@ hdhome_run_codec_video_delete(void* obj)
         return 0;
     }
     self = (struct mycodec_video*)obj;
+    free(self->frame.buf[0]);
+    free(self->frame.buf[1]);
+    free(self->frame.buf[2]);
     mpeg2_close(self->dec);
     free(self);
     return 0;
 }
 
 /*****************************************************************************/
-static void
+static int
 decode_mpeg2(struct mycodec_video* self, uint8_t* start, uint8_t* end)
 {
     const mpeg2_info_t* info;
     mpeg2_state_t state;
+    int ybytes;
+    int uvbytes;
 
     LLOGLN(10, ("decode_mpeg2:"));
     mpeg2_buffer(self->dec, start, end);
     info = mpeg2_info(self->dec);
     while (1)
     {
-        
-        uint8_t * buf[3];
-		void * id;
-        
         state = mpeg2_parse(self->dec);
         LLOGLN(10, ("decode_mpeg2: state %d", state));
         switch (state)
         {
             case STATE_BUFFER:
                 LLOGLN(10, ("decode_mpeg2: STATE_BUFFER"));
-                return;
+                return 0;
             case STATE_SEQUENCE:
                 LLOGLN(10, ("decode_mpeg2: STATE_SEQUENCE"));
-                //mpeg2_custom_fbuf(self->dec, 1);
-                //id = malloc(1024 * 1024 * 3);
-                //mpeg2_set_buf(self->dec, buf, id);
-                //mpeg2_set_buf(self->dec, buf, id);
-                //mpeg2_set_buf(self->dec, buf, id);
                 break;
             case STATE_PICTURE:
                 LLOGLN(10, ("decode_mpeg2: STATE_PICTURE"));
@@ -399,15 +364,43 @@ decode_mpeg2(struct mycodec_video* self, uint8_t* start, uint8_t* end)
             case STATE_SLICE:
             case STATE_END:
             case STATE_INVALID_END:
-                if (info->display_fbuf)
+                if ((info->sequence != NULL) && (info->display_fbuf != NULL))
                 {
-                    LLOGLN(10, ("decode_mpeg2: display_fbuf set"));
+                    LLOGLN(10, ("decode_mpeg2: width %d height %d "
+                           "frame_period %d",
+                           info->sequence->width,
+                           info->sequence->height,
+                           info->sequence->frame_period));
+                    if ((self->width != info->sequence->width) ||
+                        (self->height != info->sequence->height))
+                    {
+                        self->width = info->sequence->width;
+                        self->height = info->sequence->height;
+                        ybytes = self->width * self->height;
+                        uvbytes = self->width * self->height / 4;
+                        free(self->frame.buf[0]);
+                        free(self->frame.buf[1]);
+                        free(self->frame.buf[2]);
+                        self->frame.buf[0] = (uint8_t*)malloc(ybytes);
+                        self->frame.buf[1] = (uint8_t*)malloc(uvbytes);
+                        self->frame.buf[2] = (uint8_t*)malloc(uvbytes);
+                    }
+                    else
+                    {
+                        ybytes = self->width * self->height;
+                        uvbytes = self->width * self->height / 4;
+                    }
+                    memcpy(self->frame.buf[0], info->display_fbuf->buf[0], ybytes);
+                    memcpy(self->frame.buf[1], info->display_fbuf->buf[1], uvbytes);
+                    memcpy(self->frame.buf[2], info->display_fbuf->buf[2], uvbytes);
+                    self->got_frame = 1;
                 }
                 break;
             default:
                 break;
         }
     }
+    return 1;
 }
 
 /*****************************************************************************/
@@ -425,6 +418,8 @@ hdhome_run_codec_video_decode(void* obj, void* cdata, int cdata_bytes,
     start = (uint8_t*)cdata;
     end = start + cdata_bytes;
     decode_mpeg2(self, start, end);
+    *decoded = self->got_frame;
+    self->got_frame = 0;
     *cdata_bytes_processed = cdata_bytes;
     return 0;
 }
@@ -434,6 +429,19 @@ int
 hdhome_run_codec_video_get_frame_info(void* obj, int* width, int* height,
                                       int* format, int* bytes)
 {
+    struct mycodec_video* self;
+    int lwidth;
+    int lheight;
+
+    self = (struct mycodec_video*)obj;
+    lwidth = self->width;
+    lheight = self->height;
+    LLOGLN(10, ("hdhome_run_codec_video_get_frame_info: width %d height %d",
+           lwidth, lheight));
+    *width = lwidth;
+    *height = lheight;
+    *format = 0;
+    *bytes = lwidth * lheight * 3 / 2;
     return 0;
 }
 
@@ -441,5 +449,37 @@ hdhome_run_codec_video_get_frame_info(void* obj, int* width, int* height,
 int
 hdhome_run_codec_video_get_frame_data(void* obj, void* data, int data_bytes)
 {
+    struct mycodec_video* self;
+    uint8_t* dst;
+    int lwidth;
+    int lheight;
+    int bytes;
+
+    self = (struct mycodec_video*)obj;
+    lwidth = self->width;
+    lheight = self->height;
+    dst = (uint8_t*)data;
+    bytes = lwidth * lheight;
+    if (bytes > data_bytes)
+    {
+        bytes = data_bytes;
+    }
+    memcpy(dst, self->frame.buf[0], bytes);
+    dst += bytes;
+    data_bytes -= bytes;
+    bytes = lwidth * lheight / 4;
+    if (bytes > data_bytes)
+    {
+        bytes = data_bytes;
+    }
+    memcpy(dst, self->frame.buf[1], bytes);
+    dst += bytes;
+    data_bytes -= bytes;
+    bytes = lwidth * lheight / 4;
+    if (bytes > data_bytes)
+    {
+        bytes = data_bytes;
+    }
+    memcpy(dst, self->frame.buf[2], bytes);
     return 0;
 }
