@@ -220,6 +220,10 @@ hdhome_run_codec_audio_decode(void* obj, void* cdata, int cdata_bytes,
     {
         len = cdata_bytes;
     }
+    if (len < 1)
+    {
+        return 4;
+    }
     memcpy(self->cdata + self->cdata_bytes, cdata, len);
     self->cdata_bytes += len;
     *cdata_bytes_processed = len;
@@ -242,7 +246,7 @@ hdhome_run_codec_audio_decode(void* obj, void* cdata, int cdata_bytes,
         level = 1;
         if (a52_frame(self->state, self->cdata, &flags, &level, 384))
         {
-            return 4;
+            return 5;
         }
         *decoded = 1;
     }
@@ -336,17 +340,57 @@ hdhome_run_codec_video_delete(void* obj)
 
 /*****************************************************************************/
 static int
+decode_mpeg2_frame(struct mycodec_video* self, const mpeg2_info_t* info)
+{
+    int ybytes;
+    int uvbytes;
+    
+    if ((info->sequence != NULL) && (info->display_fbuf != NULL))
+    {
+        LLOGLN(10, ("decode_mpeg2: width %d height %d frame_period %d",
+               info->sequence->width, info->sequence->height,
+               info->sequence->frame_period));
+        ybytes = info->sequence->width * info->sequence->height;
+        uvbytes = ybytes / 4;
+        if ((self->width != info->sequence->width) ||
+            (self->height != info->sequence->height))
+        {
+            self->width = info->sequence->width;
+            self->height = info->sequence->height;
+            free(self->frame.buf[0]);
+            free(self->frame.buf[1]);
+            free(self->frame.buf[2]);
+            self->frame.buf[0] = (uint8_t*)malloc(ybytes);
+            self->frame.buf[1] = (uint8_t*)malloc(uvbytes);
+            self->frame.buf[2] = (uint8_t*)malloc(uvbytes);
+        }
+        if ((self->frame.buf[0] == NULL) ||
+            (self->frame.buf[0] == NULL) ||
+            (self->frame.buf[0] == NULL))
+        {
+            return 1;
+        }
+        memcpy(self->frame.buf[0], info->display_fbuf->buf[0], ybytes);
+        memcpy(self->frame.buf[1], info->display_fbuf->buf[1], uvbytes);
+        memcpy(self->frame.buf[2], info->display_fbuf->buf[2], uvbytes);
+        self->got_frame = 1;
+    }
+    return 0;
+}
+
+/*****************************************************************************/
+static int
 decode_mpeg2(struct mycodec_video* self, uint8_t* start, uint8_t* end)
 {
     const mpeg2_info_t* info;
     mpeg2_state_t state;
-    int ybytes;
-    int uvbytes;
+    int error;
 
     LLOGLN(10, ("decode_mpeg2:"));
+    error = 0;
     mpeg2_buffer(self->dec, start, end);
     info = mpeg2_info(self->dec);
-    while (1)
+    while (error == 0)
     {
         state = mpeg2_parse(self->dec);
         LLOGLN(10, ("decode_mpeg2: state %d", state));
@@ -364,43 +408,13 @@ decode_mpeg2(struct mycodec_video* self, uint8_t* start, uint8_t* end)
             case STATE_SLICE:
             case STATE_END:
             case STATE_INVALID_END:
-                if ((info->sequence != NULL) && (info->display_fbuf != NULL))
-                {
-                    LLOGLN(10, ("decode_mpeg2: width %d height %d "
-                           "frame_period %d",
-                           info->sequence->width,
-                           info->sequence->height,
-                           info->sequence->frame_period));
-                    if ((self->width != info->sequence->width) ||
-                        (self->height != info->sequence->height))
-                    {
-                        self->width = info->sequence->width;
-                        self->height = info->sequence->height;
-                        ybytes = self->width * self->height;
-                        uvbytes = self->width * self->height / 4;
-                        free(self->frame.buf[0]);
-                        free(self->frame.buf[1]);
-                        free(self->frame.buf[2]);
-                        self->frame.buf[0] = (uint8_t*)malloc(ybytes);
-                        self->frame.buf[1] = (uint8_t*)malloc(uvbytes);
-                        self->frame.buf[2] = (uint8_t*)malloc(uvbytes);
-                    }
-                    else
-                    {
-                        ybytes = self->width * self->height;
-                        uvbytes = self->width * self->height / 4;
-                    }
-                    memcpy(self->frame.buf[0], info->display_fbuf->buf[0], ybytes);
-                    memcpy(self->frame.buf[1], info->display_fbuf->buf[1], uvbytes);
-                    memcpy(self->frame.buf[2], info->display_fbuf->buf[2], uvbytes);
-                    self->got_frame = 1;
-                }
+                error = decode_mpeg2_frame(self, info);
                 break;
             default:
                 break;
         }
     }
-    return 1;
+    return error;
 }
 
 /*****************************************************************************/
