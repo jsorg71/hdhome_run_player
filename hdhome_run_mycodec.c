@@ -58,7 +58,10 @@ struct mycodec_video
     int width;
     int height;
     int got_frame;
-    mpeg2_fbuf_t frame;
+    int pad0;
+    void* ybuf;
+    void* ubuf;
+    void* vbuf;
 };
 
 /*****************************************************************************/
@@ -99,7 +102,7 @@ hdhome_run_codec_audio_create(void** obj, int codec_id)
         a52_free(self->state);
         free(self);
         return 5;
-    }    
+    }
     *obj = self;
     return 0;
 }
@@ -330,9 +333,9 @@ hdhome_run_codec_video_delete(void* obj)
         return 0;
     }
     self = (struct mycodec_video*)obj;
-    free(self->frame.buf[0]);
-    free(self->frame.buf[1]);
-    free(self->frame.buf[2]);
+    free(self->ybuf);
+    free(self->ubuf);
+    free(self->vbuf);
     mpeg2_close(self->dec);
     free(self);
     return 0;
@@ -344,7 +347,7 @@ decode_mpeg2_frame(struct mycodec_video* self, const mpeg2_info_t* info)
 {
     int ybytes;
     int uvbytes;
-    
+
     if ((info->sequence != NULL) && (info->display_fbuf != NULL))
     {
         LLOGLN(10, ("decode_mpeg2: width %d height %d frame_period %d",
@@ -357,22 +360,21 @@ decode_mpeg2_frame(struct mycodec_video* self, const mpeg2_info_t* info)
         {
             self->width = info->sequence->width;
             self->height = info->sequence->height;
-            free(self->frame.buf[0]);
-            free(self->frame.buf[1]);
-            free(self->frame.buf[2]);
-            self->frame.buf[0] = (uint8_t*)malloc(ybytes);
-            self->frame.buf[1] = (uint8_t*)malloc(uvbytes);
-            self->frame.buf[2] = (uint8_t*)malloc(uvbytes);
+            free(self->ybuf);
+            free(self->ubuf);
+            free(self->vbuf);
+            self->ybuf = malloc(ybytes);
+            self->ubuf = malloc(uvbytes);
+            self->vbuf = malloc(uvbytes);
         }
-        if ((self->frame.buf[0] == NULL) ||
-            (self->frame.buf[0] == NULL) ||
-            (self->frame.buf[0] == NULL))
+        if ((self->ybuf == NULL) || (self->ubuf == NULL) ||
+            (self->vbuf == NULL))
         {
             return 1;
         }
-        memcpy(self->frame.buf[0], info->display_fbuf->buf[0], ybytes);
-        memcpy(self->frame.buf[1], info->display_fbuf->buf[1], uvbytes);
-        memcpy(self->frame.buf[2], info->display_fbuf->buf[2], uvbytes);
+        memcpy(self->ybuf, info->display_fbuf->buf[0], ybytes);
+        memcpy(self->ubuf, info->display_fbuf->buf[1], uvbytes);
+        memcpy(self->vbuf, info->display_fbuf->buf[2], uvbytes);
         self->got_frame = 1;
     }
     return 0;
@@ -425,7 +427,7 @@ hdhome_run_codec_video_decode(void* obj, void* cdata, int cdata_bytes,
     struct mycodec_video* self;
     uint8_t* start;
     uint8_t* end;
-    
+
     LLOGLN(10, ("hdhome_run_codec_video_decode:"));
     LLOGLN(10, ("hdhome_run_codec_video_decode: cdata_bytes %d", cdata_bytes));
     self = (struct mycodec_video*)obj;
@@ -464,7 +466,7 @@ int
 hdhome_run_codec_video_get_frame_data(void* obj, void* data, int data_bytes)
 {
     struct mycodec_video* self;
-    uint8_t* dst;
+    uint8_t* dst8;
     int lwidth;
     int lheight;
     int bytes;
@@ -472,28 +474,28 @@ hdhome_run_codec_video_get_frame_data(void* obj, void* data, int data_bytes)
     self = (struct mycodec_video*)obj;
     lwidth = self->width;
     lheight = self->height;
-    dst = (uint8_t*)data;
+    dst8 = (uint8_t*)data;
     bytes = lwidth * lheight;
     if (bytes > data_bytes)
     {
         bytes = data_bytes;
     }
-    memcpy(dst, self->frame.buf[0], bytes);
-    dst += bytes;
+    memcpy(dst8, self->ybuf, bytes);
+    dst8 += bytes;
     data_bytes -= bytes;
     bytes = lwidth * lheight / 4;
     if (bytes > data_bytes)
     {
         bytes = data_bytes;
     }
-    memcpy(dst, self->frame.buf[1], bytes);
-    dst += bytes;
+    memcpy(dst8, self->ubuf, bytes);
+    dst8 += bytes;
     data_bytes -= bytes;
     bytes = lwidth * lheight / 4;
     if (bytes > data_bytes)
     {
         bytes = data_bytes;
     }
-    memcpy(dst, self->frame.buf[2], bytes);
+    memcpy(dst8, self->vbuf, bytes);
     return 0;
 }

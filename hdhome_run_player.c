@@ -875,7 +875,7 @@ tmpegts_video_cb(const void* data, int data_bytes,
                 mtwvi->data = (unsigned char*)malloc(cdata_bytes);
                 if (mtwvi->data != NULL)
                 {
-                    memcpy(mtwvi->data, cdata, cdata_bytes); 
+                    memcpy(mtwvi->data, cdata, cdata_bytes);
                     mtwvi->data_bytes = cdata_bytes;
                     LLOGLN(10, ("tmpegts_video_cb: audio_latency %d",
                            vai->audio_latency));
@@ -966,7 +966,7 @@ tmpegts_audio_cb(const void* data, int data_bytes,
                     calloc(sizeof(struct main_to_worker_audio_item), 1);
             if (mtwai != NULL)
             {
-                mtwai->data = (unsigned char *)malloc(cdata_bytes); 
+                mtwai->data = (unsigned char *)malloc(cdata_bytes);
                 if (mtwai->data != NULL)
                 {
                     memcpy(mtwai->data, cdata, cdata_bytes);
