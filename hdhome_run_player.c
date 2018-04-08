@@ -882,7 +882,7 @@ tmpegts_video_cb(const void* data, int data_bytes,
                     LLOGLN(10, ("tmpegts_video_cb: audio_latency %d",
                            vai->audio_latency));
                     mtwvi->mstime_dts = mstime_dts + vai->audio_latency +
-                                        HD_AUDIO_MSDELAY - 500;
+                                        HD_AUDIO_MSDELAY - 750;
                     if (add_main_to_worker_video_item(vai, mtwvi) != 0)
                     {
                         free(mtwvi->data);
@@ -1136,7 +1136,7 @@ static int
 video_callback(int sck, void* udata)
 {
     struct mlcb_info* mlcbi;
-    unsigned char* decoded_data;
+    void* decoded_data;
     int decoded_data_bytes;
     int error;
     int bytes;
@@ -1154,7 +1154,7 @@ video_callback(int sck, void* udata)
         mlcbi->frame_count++;
         error = hdhome_run_x11_get_buffer(g_gui, wtmvi->width, wtmvi->height,
                                           wtmvi->format,
-                                          (void**)(&decoded_data),
+                                          &decoded_data,
                                           &decoded_data_bytes);
         if (error == 0)
         {
