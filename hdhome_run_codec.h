@@ -28,6 +28,8 @@ hdhome_run_codec_init(void);
 int
 hdhome_run_codec_audio_create(void** obj, int codec_id);
 int
+hdhome_run_codec_audio_delete(void* obj);
+int
 hdhome_run_codec_audio_decode(void* obj, void* cdata, int cdata_bytes,
                               int* cdata_bytes_processed, int* decoded);
 int
