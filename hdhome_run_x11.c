@@ -44,30 +44,37 @@
   } \
   while (0)
 
-static Display* g_disp = 0;
-static int g_screenNumber = 0;
-static Window g_win = 0;
-static long g_eventMask = 0;
-static int g_disp_fd = 0;
-static GC g_gc;
-
-static int g_swidth = 0;
-static int g_sheight = 0;
-static unsigned int g_xv_event_base = 0;
-static int g_xv_port = 0;
-
-static int g_xv_shmid = -1;
-static void * g_xv_shmaddr = 0;
-static int g_xv_shmbytes = 0;
-
-static int g_vwidth = 0;
-static int g_vheight = 0;
-
-static int g_got_vis_not = 0;
+struct x11_info
+{
+    Display* disp;
+    int screenNumber;
+    Window win;
+    long eventMask;
+    int disp_fd;
+    GC gc;
+    int swidth;
+    int sheight;
+    unsigned int xv_event_base;
+    int xv_port;
+    int xv_shmid;
+    void* xv_shmaddr;
+    int xv_shmbytes;
+    int vwidth;
+    int vheight;
+    int got_vis_not;
+};
 
 /*****************************************************************************/
 int
 hdhome_run_x11_init(void)
+{
+    LLOGLN(0, ("hdhome_run_x11_init:"));
+    return 0;
+}
+
+/*****************************************************************************/
+int
+hdhome_run_x11_create(void** obj)
 {
     int white;
     int black;
@@ -80,86 +87,107 @@ hdhome_run_x11_init(void)
     unsigned int request_base;
     unsigned int num_adaptors;
     XvAdaptorInfo* ai;
+    struct x11_info* self;
 
-    LLOGLN(0, ("hdhomerun_x11_init:"));
-    g_disp = XOpenDisplay(NULL);
-    if (g_disp == 0)
+    LLOGLN(0, ("hdhome_run_x11_create:"));
+    self = (struct x11_info*)calloc(sizeof(struct x11_info), 1);
+    if (self == NULL)
     {
-        LLOGLN(0, ("error opening X display"));
         return 1;
     }
-    g_disp_fd = ConnectionNumber(g_disp);
-    g_screenNumber = DefaultScreen(g_disp);
-    white = WhitePixel(g_disp, g_screenNumber);
-    black = BlackPixel(g_disp, g_screenNumber);
-    g_win = XCreateSimpleWindow(g_disp, DefaultRootWindow(g_disp),
-                                50, 50, 800, 600, 0, black, white);
-    g_eventMask = StructureNotifyMask | VisibilityChangeMask |
-                  ButtonPressMask | ButtonReleaseMask | KeyPressMask;
-    XSelectInput(g_disp, g_win, g_eventMask);
-    XMapWindow(g_disp, g_win);
-    ret = XvQueryExtension(g_disp, &version, &release, &request_base,
+    self->xv_shmid = -1;
+    self->disp = XOpenDisplay(NULL);
+    if (self->disp == 0)
+    {
+        LLOGLN(0, ("error opening X display"));
+        return 2;
+    }
+    self->disp_fd = ConnectionNumber(self->disp);
+    self->screenNumber = DefaultScreen(self->disp);
+    white = WhitePixel(self->disp, self->screenNumber);
+    black = BlackPixel(self->disp, self->screenNumber);
+    self->win = XCreateSimpleWindow(self->disp, DefaultRootWindow(self->disp),
+                                    50, 50, 800, 600, 0, black, white);
+    self->eventMask = StructureNotifyMask | VisibilityChangeMask |
+                      ButtonPressMask | ButtonReleaseMask | KeyPressMask;
+    XSelectInput(self->disp, self->win, self->eventMask);
+    XMapWindow(self->disp, self->win);
+    ret = XvQueryExtension(self->disp, &version, &release, &request_base,
                            &event_base, &error_base);
     if (ret != Success)
     {
         LLOGLN(0, ("XvQueryExtension failedd"));
-        return 2;
+        return 3;
     }
-    g_xv_event_base = event_base;
-    ret = XvQueryAdaptors(g_disp, DefaultRootWindow(g_disp), &num_adaptors,
-                          &ai);
+    self->xv_event_base = event_base;
+    ret = XvQueryAdaptors(self->disp, DefaultRootWindow(self->disp),
+                          &num_adaptors, &ai);
     if (ret != Success)
     {
         LLOGLN(0, ("XvQueryAdaptors failed"));
-        return 3;
+        return 4;
     }
     for (index = 0; index < num_adaptors; index++)
     {
-        if (g_xv_port == 0 && index == num_adaptors - 1)
+        if (self->xv_port == 0 && index == num_adaptors - 1)
         {
-            g_xv_port = ai[index].base_id;
+            self->xv_port = ai[index].base_id;
         }
     }
     XvFreeAdaptorInfo(ai);
-    g_gc = XCreateGC(g_disp, g_win, 0, NULL);
-    XFlush(g_disp);
+    self->gc = XCreateGC(self->disp, self->win, 0, NULL);
+    XFlush(self->disp);
+
+    *obj = self;
+
     return 0;
 }
 
 /*****************************************************************************/
 int
-hdhome_run_x11_get_buffer(int width, int height, int format,
+hdhome_run_x11_delete(void* obj)
+{
+    return 0;
+}
+
+/*****************************************************************************/
+int
+hdhome_run_x11_get_buffer(void* obj, int width, int height, int format,
                           void** buffer, int* buffer_bytes)
 {
+    struct x11_info* self;
     int bytes;
 
     LLOGLN(10, ("hdhome_run_x11_get_buffer:"));
-    if ((width != g_vwidth) || (height != g_vheight))
+    self = (struct x11_info*)obj;
+    if ((width != self->vwidth) || (height != self->vheight))
     {
         LLOGLN(0, ("hdhome_run_x11_get_buffer: createing buffer for %dx%d "
                "video", width, height));
-        g_vwidth = width;
-        g_vheight = height;
+        self->vwidth = width;
+        self->vheight = height;
     }
     bytes = width * height * 2;
-    if (bytes > g_xv_shmbytes)
+    if (bytes > self->xv_shmbytes)
     {
-        shmdt(g_xv_shmaddr);
-        g_xv_shmbytes = bytes;
-        g_xv_shmid = shmget(IPC_PRIVATE, g_xv_shmbytes, IPC_CREAT | 0777);
-        g_xv_shmaddr = shmat(g_xv_shmid, 0, 0);
-        shmctl(g_xv_shmid, IPC_RMID, NULL);
+        shmdt(self->xv_shmaddr);
+        self->xv_shmbytes = bytes;
+        self->xv_shmid = shmget(IPC_PRIVATE, self->xv_shmbytes,
+                                IPC_CREAT | 0777);
+        self->xv_shmaddr = shmat(self->xv_shmid, 0, 0);
+        shmctl(self->xv_shmid, IPC_RMID, NULL);
     }
-    *buffer = g_xv_shmaddr;
-    *buffer_bytes = g_xv_shmbytes;
+    *buffer = self->xv_shmaddr;
+    *buffer_bytes = self->xv_shmbytes;
     return 0;
 }
 
 /*****************************************************************************/
 int
-hdhome_run_x11_show_buffer(int width, int height, int format,
+hdhome_run_x11_show_buffer(void* obj, int width, int height, int format,
                            void* buffer)
 {
+    struct x11_info* self;
     int dst_pixfmt;
     int x;
     int y;
@@ -170,8 +198,8 @@ hdhome_run_x11_show_buffer(int width, int height, int format,
     int ratio;
 
     LLOGLN(10, ("hdhome_run_x11_show_buffer:"));
-
-    if (g_got_vis_not == 0)
+    self = (struct x11_info*)obj;
+    if (self->got_vis_not == 0)
     {
         LLOGLN(0, ("hdhome_run_x11_show_buffer: g_got_vis_not is false"));
         return 1;
@@ -188,53 +216,57 @@ hdhome_run_x11_show_buffer(int width, int height, int format,
         default:
             return 1;
     }
-    shminfo.shmid = g_xv_shmid;
-    shminfo.shmaddr = (char*)g_xv_shmaddr;
-    image = XvShmCreateImage(g_disp, g_xv_port, dst_pixfmt, 0,
+    shminfo.shmid = self->xv_shmid;
+    shminfo.shmaddr = (char*)self->xv_shmaddr;
+    image = XvShmCreateImage(self->disp, self->xv_port, dst_pixfmt, 0,
                              width, height, &shminfo);
     image->data = shminfo.shmaddr;
     shminfo.readOnly = 0;
-    if (!XShmAttach(g_disp, &shminfo))
+    if (!XShmAttach(self->disp, &shminfo))
     {
         XFree(image);
         return 1;
     }
     ratio = (width << 16) / height;
-    sheight = g_sheight;
+    sheight = self->sheight;
     swidth = (sheight * ratio + 32768) >> 16;
-    if (swidth > g_swidth)
+    if (swidth > self->swidth)
     {
         ratio = (height << 16) / width;
-        swidth = g_swidth;
-        sheight = (g_swidth * ratio + 32768) >> 16;
+        swidth = self->swidth;
+        sheight = (self->swidth * ratio + 32768) >> 16;
     }
     x = 0;
-    if (swidth < g_swidth)
+    if (swidth < self->swidth)
     {
-        x = (g_swidth - swidth) / 2;
-        XFillRectangle(g_disp, g_win, g_gc, 0, 0, x, g_sheight);
-        XFillRectangle(g_disp, g_win, g_gc, x + swidth, 0, x + 1, g_sheight);
+        x = (self->swidth - swidth) / 2;
+        XFillRectangle(self->disp, self->win, self->gc, 0, 0, x,
+                       self->sheight);
+        XFillRectangle(self->disp, self->win, self->gc, x + swidth, 0, x + 1,
+                       self->sheight);
     }
     y = 0;
-    if (sheight < g_sheight)
+    if (sheight < self->sheight)
     {
-        y = (g_sheight - sheight) / 2;
-        XFillRectangle(g_disp, g_win, g_gc, 0, 0, g_swidth, y);
-        XFillRectangle(g_disp, g_win, g_gc, 0, y + sheight, g_swidth, y + 1);
+        y = (self->sheight - sheight) / 2;
+        XFillRectangle(self->disp, self->win, self->gc, 0, 0, self->swidth, y);
+        XFillRectangle(self->disp, self->win, self->gc, 0, y + sheight,
+                       self->swidth, y + 1);
     }
-    XvShmPutImage(g_disp, g_xv_port, g_win, g_gc, image, 0, 0,
+    XvShmPutImage(self->disp, self->xv_port, self->win, self->gc, image, 0, 0,
                   width, height, x, y, swidth, sheight, 0);
-    XSync(g_disp, 0);
-    XShmDetach(g_disp, &shminfo);
+    XSync(self->disp, 0);
+    XShmDetach(self->disp, &shminfo);
     XFree(image);
     return 0;
 }
 
 /*****************************************************************************/
 int
-hdhome_run_x11_main_loop(int* sck, tmlcb* cb, int count, void* udata,
-                         int term_fd)
+hdhome_run_x11_main_loop(void* obj, int* sck, tmlcb* cb, int count,
+                         void* udata, int term_fd)
 {
+    struct x11_info* self;
     XEvent evt;
     fd_set rfds_set;
     int max_fd;
@@ -246,6 +278,7 @@ hdhome_run_x11_main_loop(int* sck, tmlcb* cb, int count, void* udata,
     struct timeval time;
 
     LLOGLN(0, ("hdhome_run_x11_main_loop:"));
+    self = (struct x11_info*)obj;
     mstimeout = 15;
     error = 0;
     cont = 1;
@@ -258,10 +291,10 @@ hdhome_run_x11_main_loop(int* sck, tmlcb* cb, int count, void* udata,
         {
             max_fd = term_fd;
         }
-        FD_SET(g_disp_fd, &rfds_set);
-        if (g_disp_fd > max_fd)
+        FD_SET(self->disp_fd, &rfds_set);
+        if (self->disp_fd > max_fd)
         {
-            max_fd = g_disp_fd;
+            max_fd = self->disp_fd;
         }
         for (index = 0; index < count; index++)
         {
@@ -295,9 +328,9 @@ hdhome_run_x11_main_loop(int* sck, tmlcb* cb, int count, void* udata,
                            index, sck[index], error));
                 }
             }
-            while (XPending(g_disp) > 0)
+            while (XPending(self->disp) > 0)
             {
-                XNextEvent(g_disp, &evt);
+                XNextEvent(self->disp, &evt);
                 switch (evt.type)
                 {
                     case MapNotify:
@@ -305,15 +338,15 @@ hdhome_run_x11_main_loop(int* sck, tmlcb* cb, int count, void* udata,
                         break;
                     case VisibilityNotify:
                         LLOGLN(10, ("hdhome_run_x11_main_loop: VisibilityNotify"));
-                        g_got_vis_not = 1;
+                        self->got_vis_not = 1;
                         break;
                     case KeyPress:
                         break;
                     case ButtonRelease:
                         break;
                     case ConfigureNotify:
-                        g_swidth = evt.xconfigure.width;
-                        g_sheight = evt.xconfigure.height;
+                        self->swidth = evt.xconfigure.width;
+                        self->sheight = evt.xconfigure.height;
                         break;
                 }
             }

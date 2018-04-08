@@ -45,6 +45,8 @@
   } \
   while (0)
 
+static void* g_gui = NULL;
+
 struct video_info
 {
     int started;
@@ -1150,7 +1152,7 @@ video_callback(int sck, void* udata)
     while (wtmvi != NULL)
     {
         mlcbi->frame_count++;
-        error = hdhome_run_x11_get_buffer(wtmvi->width, wtmvi->height,
+        error = hdhome_run_x11_get_buffer(g_gui, wtmvi->width, wtmvi->height,
                                           wtmvi->format,
                                           (void**)(&decoded_data),
                                           &decoded_data_bytes);
@@ -1162,7 +1164,7 @@ video_callback(int sck, void* udata)
                 bytes = wtmvi->data_bytes;
             }
             memcpy(decoded_data, wtmvi->data, bytes);
-            hdhome_run_x11_show_buffer(wtmvi->width, wtmvi->height,
+            hdhome_run_x11_show_buffer(g_gui, wtmvi->width, wtmvi->height,
                                        wtmvi->format, decoded_data);
         }
         free(wtmvi->data);
@@ -1272,6 +1274,11 @@ main(int argc, char** argv)
         LLOGLN(0, ("hdhome_run_x11_init failed"));
         return 1;
     }
+    if (hdhome_run_x11_create(&g_gui) != 0)
+    {
+        LLOGLN(0, ("hdhome_run_x11_create failed"));
+        return 1;
+    }
     error = hdhome_run_codec_audio_create(&(ai.ac3_handle), AUDIO_CODEC_ID_AC3);
     if (error != 0)
     {
@@ -1314,7 +1321,7 @@ main(int argc, char** argv)
             thread = 0;
             pthread_create(&thread, 0, audio_thread_proc, &mlcbi);
             pthread_detach(thread);
-            hdhome_run_x11_main_loop(scks, mlcbs, 2, &mlcbi,
+            hdhome_run_x11_main_loop(g_gui, scks, mlcbs, 2, &mlcbi,
                                      mlcbi.term_pipe[0]);
         }
         hdhomerun_device_destroy(hdhr);
