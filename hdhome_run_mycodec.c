@@ -347,30 +347,40 @@ decode_mpeg2_frame(struct mycodec_video* self, const mpeg2_info_t* info)
 {
     int ybytes;
     int uvbytes;
+    int lwidth;
+    int lheight;
 
     if ((info->sequence != NULL) && (info->display_fbuf != NULL))
     {
         LLOGLN(10, ("decode_mpeg2: width %d height %d frame_period %d",
                info->sequence->width, info->sequence->height,
                info->sequence->frame_period));
-        ybytes = info->sequence->width * info->sequence->height;
-        uvbytes = ybytes / 4;
-        if ((self->width != info->sequence->width) ||
-            (self->height != info->sequence->height))
+        lwidth = info->sequence->width;
+        lheight = info->sequence->height;
+        if ((lwidth < 16) || (lwidth > 4096) ||
+            (lheight < 16) || (lheight > 4096))
         {
-            self->width = info->sequence->width;
-            self->height = info->sequence->height;
+            return 1;
+        }
+        ybytes = lwidth * lheight;
+        uvbytes = ybytes / 4;
+        if ((self->width != lwidth) || (self->height != lheight))
+        {
+            self->width = lwidth;
+            self->height = lheight;
             free(self->ybuf);
             free(self->ubuf);
             free(self->vbuf);
             self->ybuf = malloc(ybytes);
             self->ubuf = malloc(uvbytes);
             self->vbuf = malloc(uvbytes);
-        }
-        if ((self->ybuf == NULL) || (self->ubuf == NULL) ||
-            (self->vbuf == NULL))
-        {
-            return 1;
+            if ((self->ybuf == NULL) || (self->ubuf == NULL) ||
+                (self->vbuf == NULL))
+            {
+                self->width = 0;
+                self->height = 0;
+                return 2;
+            }
         }
         memcpy(self->ybuf, info->display_fbuf->buf[0], ybytes);
         memcpy(self->ubuf, info->display_fbuf->buf[1], uvbytes);
@@ -427,17 +437,21 @@ hdhome_run_codec_video_decode(void* obj, void* cdata, int cdata_bytes,
     struct mycodec_video* self;
     uint8_t* start;
     uint8_t* end;
+    int error;
 
     LLOGLN(10, ("hdhome_run_codec_video_decode:"));
     LLOGLN(10, ("hdhome_run_codec_video_decode: cdata_bytes %d", cdata_bytes));
     self = (struct mycodec_video*)obj;
     start = (uint8_t*)cdata;
     end = start + cdata_bytes;
-    decode_mpeg2(self, start, end);
-    *decoded = self->got_frame;
+    error = decode_mpeg2(self, start, end);
+    if (error == 0)
+    {
+        *decoded = self->got_frame;
+        *cdata_bytes_processed = cdata_bytes;
+    }
     self->got_frame = 0;
-    *cdata_bytes_processed = cdata_bytes;
-    return 0;
+    return error;
 }
 
 /*****************************************************************************/
@@ -452,11 +466,15 @@ hdhome_run_codec_video_get_frame_info(void* obj, int* width, int* height,
     self = (struct mycodec_video*)obj;
     lwidth = self->width;
     lheight = self->height;
-    LLOGLN(10, ("hdhome_run_codec_video_get_frame_info: width %d height %d",
+    if ((lwidth < 1) || (lheight < 1))
+    {
+        return 1;
+    }
+    LLOGLN(10,("hdhome_run_codec_video_get_frame_info: width %d height %d",
            lwidth, lheight));
     *width = lwidth;
     *height = lheight;
-    *format = 0;
+    *format = 0; /* I420 */
     *bytes = lwidth * lheight * 3 / 2;
     return 0;
 }
