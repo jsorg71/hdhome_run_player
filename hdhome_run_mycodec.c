@@ -26,18 +26,7 @@
 #include <mpeg2dec/mpeg2.h>
 
 #include "hdhome_run_codec.h"
-
-#define LLOG_LEVEL 1
-#define LLOGLN(_level, _args) \
-  do \
-  { \
-    if (_level < LLOG_LEVEL) \
-    { \
-        printf _args ; \
-        printf("\n"); \
-    } \
-  } \
-  while (0)
+#include "hdhome_run_log.h"
 
 struct mycodec_audio
 {
@@ -175,8 +164,8 @@ hdhome_run_codec_audio_decode(void* obj, void* cdata, int cdata_bytes,
     int len;
     float level;
 
-    LLOGLN(10, ("hdhome_run_codec_audio_decode:"));
-    LLOGLN(10, ("hdhome_run_codec_audio_decode: cdata_bytes %d", cdata_bytes));
+    LOGLN(10, (0, LOGF, LOGP));
+    LOGLN(10, (0, LOGF "cdata_bytes %d", LOGP, cdata_bytes));
     *decoded = 0;
     *cdata_bytes_processed = 0;
     self = (struct mycodec_audio*)obj;
@@ -204,8 +193,8 @@ hdhome_run_codec_audio_decode(void* obj, void* cdata, int cdata_bytes,
                     self->channels++;
                 }
                 self->bit_rate = bit_rate;
-                LLOGLN(0, ("hdhome_run_codec_audio_decode: frame_size %d "
-                       "channels %d sample_rate %d",
+                LOGLN(0, (0, LOGF "frame_size %d "
+                      "channels %d sample_rate %d", LOGP,
                        self->frame_size, self->channels, self->sample_rate));
                 self->cdata = (uint8_t*)malloc(len);
                 if (self->cdata == NULL)
@@ -352,7 +341,7 @@ decode_mpeg2_frame(struct mycodec_video* self, const mpeg2_info_t* info)
 
     if ((info->sequence != NULL) && (info->display_fbuf != NULL))
     {
-        LLOGLN(10, ("decode_mpeg2: width %d height %d frame_period %d",
+        LOGLN(10, (0, LOGF "width %d height %d frame_period %d", LOGP,
                info->sequence->width, info->sequence->height,
                info->sequence->frame_period));
         lwidth = info->sequence->width;
@@ -398,24 +387,24 @@ decode_mpeg2(struct mycodec_video* self, uint8_t* start, uint8_t* end)
     mpeg2_state_t state;
     int error;
 
-    LLOGLN(10, ("decode_mpeg2:"));
+    LOGLN(10, (0, LOGF, LOGP));
     error = 0;
     mpeg2_buffer(self->dec, start, end);
     info = mpeg2_info(self->dec);
     while (error == 0)
     {
         state = mpeg2_parse(self->dec);
-        LLOGLN(10, ("decode_mpeg2: state %d", state));
+        LOGLN(10, (0, LOGF "state %d", LOGP, state));
         switch (state)
         {
             case STATE_BUFFER:
-                LLOGLN(10, ("decode_mpeg2: STATE_BUFFER"));
+                LOGLN(10, (0, LOGF "STATE_BUFFER", LOGP));
                 return 0;
             case STATE_SEQUENCE:
-                LLOGLN(10, ("decode_mpeg2: STATE_SEQUENCE"));
+                LOGLN(10, (0, LOGF "STATE_SEQUENCE", LOGP));
                 break;
             case STATE_PICTURE:
-                LLOGLN(10, ("decode_mpeg2: STATE_PICTURE"));
+                LOGLN(10, (0, LOGF "STATE_PICTURE", LOGP));
                 break;
             case STATE_SLICE:
             case STATE_END:
@@ -439,8 +428,8 @@ hdhome_run_codec_video_decode(void* obj, void* cdata, int cdata_bytes,
     uint8_t* end;
     int error;
 
-    LLOGLN(10, ("hdhome_run_codec_video_decode:"));
-    LLOGLN(10, ("hdhome_run_codec_video_decode: cdata_bytes %d", cdata_bytes));
+    LOGLN(10, (0, LOGF, LOGP));
+    LOGLN(10, (0, LOGF "cdata_bytes %d", LOGP, cdata_bytes));
     self = (struct mycodec_video*)obj;
     start = (uint8_t*)cdata;
     end = start + cdata_bytes;
@@ -470,8 +459,7 @@ hdhome_run_codec_video_get_frame_info(void* obj, int* width, int* height,
     {
         return 1;
     }
-    LLOGLN(10,("hdhome_run_codec_video_get_frame_info: width %d height %d",
-           lwidth, lheight));
+    LOGLN(10, (0, LOGF "width %d height %d", LOGP, lwidth, lheight));
     *width = lwidth;
     *height = lheight;
     *format = 0; /* I420 */

@@ -29,21 +29,10 @@
 #include "hdhome_run_pa.h"
 #include "list.h"
 #include "hdhome_run_codec.h"
+#include "hdhome_run_log.h"
 
 #define HD_AUDIO_MSDELAY 1000
 #define MSTIME_HISTORY 4000
-
-#define LLOG_LEVEL 1
-#define LLOGLN(_level, _args) \
-  do \
-  { \
-    if (_level < LLOG_LEVEL) \
-    { \
-        printf _args ; \
-        printf("\n"); \
-    } \
-  } \
-  while (0)
 
 static void* g_gui = NULL;
 
@@ -254,8 +243,7 @@ audio_delay_list_get_average(struct list* alist, int now, int diff)
     {
         average = acc;
     }
-    LLOGLN(10, ("audio_delay_list_get_average: count %d average %d",
-           count, average));
+    LOGLN(10, (0, LOGF "count %d average %d", LOGP, count, average));
     return average;
 }
 
@@ -266,16 +254,16 @@ get_main_to_worker_video_item(struct video_audio_info* vai,
 {
     struct main_to_worker_video_item* mtwvi;
 
-    LLOGLN(10, ("get_main_to_worker_video_item: count %d",
-           vai->main_to_worker_video_list->count));
+    LOGLN(10, (0, LOGF "count %d", LOGP,
+          vai->main_to_worker_video_list->count));
     mtwvi = NULL;
     pthread_mutex_lock(vai->mutex);
     if (vai->main_to_worker_video_list->count > 0)
     {
         mtwvi = (struct main_to_worker_video_item*)
                 list_get_item(vai->main_to_worker_video_list, 0);
-        LLOGLN(10, ("get_main_to_worker_video_item: ms wait time %d",
-               (int)(mtwvi->mstime_dts - mstime)));
+        LOGLN(10, (0, LOGF "ms wait time %d", LOGP,
+              (int)(mtwvi->mstime_dts - mstime)));
         if ((mtwvi->mstime_dts > mstime) &&
             (mtwvi->mstime_dts - mstime < 10000))
         {
@@ -299,9 +287,8 @@ add_main_to_worker_video_item(struct video_audio_info* vai,
     if (vai->main_to_worker_video_bytes > 100 * 1024 * 1024)
     {
         pthread_mutex_unlock(vai->mutex);
-        LLOGLN(10, ("add_main_to_worker_video_item: "
-               "main_to_worker_video_bytes %d",
-               vai->main_to_worker_video_bytes));
+        LOGLN(10, (0, LOGF "main_to_worker_video_bytes %d", LOGP,
+              vai->main_to_worker_video_bytes));
         return 1;
     }
     list_add_item(vai->main_to_worker_video_list, (long)mtwvi);
@@ -338,9 +325,8 @@ add_worker_to_main_video_item(struct video_audio_info* vai,
     if (vai->worker_to_main_video_bytes > 100 * 1024 * 1024)
     {
         pthread_mutex_unlock(vai->mutex);
-        LLOGLN(0, ("add_worker_to_main_video_item: "
-               "worker_to_main_video_bytes %d",
-               vai->worker_to_main_video_bytes));
+        LOGLN(0, (0, LOGF "worker_to_main_video_bytes %d", LOGP,
+              vai->worker_to_main_video_bytes));
         return 1;
     }
     list_add_item(vai->worker_to_main_video_list, (long)wtmvi);
@@ -377,9 +363,8 @@ add_main_to_worker_audio_item(struct video_audio_info* vai,
     if (vai->main_to_worker_audio_bytes > 100 * 1024 * 1024)
     {
         pthread_mutex_unlock(vai->mutex);
-        LLOGLN(0, ("add_main_to_worker_audio_item: "
-               "main_to_worker_audio_bytes %d",
-               vai->main_to_worker_audio_bytes));
+        LOGLN(0, (0, LOGF "main_to_worker_audio_bytes %d", LOGP,
+              vai->main_to_worker_audio_bytes));
         return 1;
     }
     list_add_item(vai->main_to_worker_audio_list, (long)mtwai);
@@ -418,8 +403,7 @@ decode_video_and_send_back(struct video_audio_info* vai,
                                               &decoded);
         if (error != 0)
         {
-            LLOGLN(0, ("decode_video_and_send_back: error decoding %d",
-                   error));
+            LOGLN(0, (0, LOGF "error decoding %d", LOGP, error));
             break;
         }
         cdata += cdata_bytes_processed;
@@ -502,7 +486,7 @@ video_thread_proc(void* arg)
     struct mlcb_info* mlcbi;
     struct timeval time;
 
-    LLOGLN(0, ("video_thread_proc:"));
+    LOGLN(0, (0, LOGF, LOGP));
     mlcbi = (struct mlcb_info*)arg;
     wait_mstime = 1000;
     cont = 1;
@@ -582,7 +566,7 @@ decode_and_present_audio(struct video_audio_info* vai,
                                               &decoded);
         if (error != 0)
         {
-            LLOGLN(0, ("decode_and_present_audio: error decoding %d", error));
+            LOGLN(0, (0, LOGF "error decoding %d", LOGP, error));
             break;
         }
         cdata += cdata_bytes_processed;
@@ -612,18 +596,21 @@ decode_and_present_audio(struct video_audio_info* vai,
                                 switch (channels)
                                 {
                                     case 1:
-                                        LLOGLN(0, ("decode_and_present_audio: "
-                                               "starting 1 channel 48000 audio"));
+                                        LOGLN(0, (0, LOGF
+                                              "starting 1 channel 48000 audio",
+                                              LOGP));
                                         pa_flags = CAP_PA_FORMAT_48000_1CH_16LE;
                                         break;
                                     case 2:
-                                        LLOGLN(0, ("decode_and_present_audio: "
-                                               "starting 2 channel 48000 audio"));
+                                        LOGLN(0, (0, LOGF
+                                              "starting 2 channel 48000 audio",
+                                              LOGP));
                                         pa_flags = CAP_PA_FORMAT_48000_2CH_16LE;
                                         break;
                                     default:
-                                        LLOGLN(0, ("decode_and_present_audio: "
-                                               "starting 6 channel 48000 audio"));
+                                        LOGLN(0, (0, LOGF
+                                              "starting 6 channel 48000 audio",
+                                              LOGP));
                                         pa_flags = CAP_PA_FORMAT_48000_6CH_16LE;
                                         break;
                                 }
@@ -648,9 +635,8 @@ decode_and_present_audio(struct video_audio_info* vai,
                             vai->audio_latency =
                                 audio_delay_list_get_average(ai->audio_delay_list,
                                                              now, diff);
-                            LLOGLN(10, ("decode_and_present_audio: "
-                                   "audio_latency %d diff %d",
-                                   vai->audio_latency, diff));
+                            LOGLN(10, (0, LOGF "audio_latency %d diff %d",
+                                  LOGP, vai->audio_latency, diff));
                         }
                     }
                     free(out_data);
@@ -688,7 +674,7 @@ audio_thread_proc(void* arg)
     struct main_to_worker_audio_item* mtwai;
     struct mlcb_info* mlcbi;
 
-    LLOGLN(0, ("audio_thread_proc:"));
+    LOGLN(0, (0, LOGF, LOGP));
     mlcbi = (struct mlcb_info*)arg;
     cont = 1;
     while (cont)
@@ -758,13 +744,13 @@ read_pts_dts(const void* ptr, int* pts, int* dts)
     pui8 = (const unsigned char*) ptr;
     if ((pui8[7] & 0xc0) == 0xc0)
     {
-        LLOGLN(10, ("read_pts_dts: got pts/dts"));
+        LOGLN(10, (0, LOGF "got pts/dts", LOGP));
         read_time(pui8 + 9, pts);
         read_time(pui8 + 9 + 5, dts);
     }
     else if ((pui8[7] & 0x80) == 0x80)
     {
-        LLOGLN(10, ("read_pts_dts: got pts"));
+        LOGLN(10, (0, LOGF "got pts", LOGP));
         read_time(pui8 + 9, pts);
         *dts = *pts;
     }
@@ -817,24 +803,24 @@ tmpegts_video_cb(const void* data, int data_bytes,
 
     if (mpegts->pcr_flag)
     {
-        LLOGLN(10, ("tmpegts_video_cb: got pcr_flag"));
+        LOGLN(10, (0, LOGF "got pcr_flag", LOGP));
         /* 33 bit time */
         if (read_pcr(mpegts->pcr, &pcr) == 0)
         {
             /* get the difference between our clock and
                server clock */
-            LLOGLN(10, ("tmpegts_video_cb: update clock diff"));
+            LOGLN(10, (0, LOGF "update clock diff", LOGP));
             vai->got_cdiff = 1;
             now = get_mstime();
             cdiff = pcr - now;
             vai->cdiff = cdiff;
-            LLOGLN(10, ("tmpegts_video_cb: update clock diff %d", vai->cdiff));
+            LOGLN(10, (0, LOGF "update clock diff %d", LOGP, vai->cdiff));
         }
     }
 
     if (mpegts->payload_unit_start_indicator)
     {
-        LLOGLN(10, ("tmpegts_video_cb: start"));
+        LOGLN(10, (0, LOGF "start", LOGP));
         //hex_dump(vi->frame_data, 64);
         vi->this_pdu_bytes = 0;
         /* https://en.wikipedia.org/wiki/Packetized_elementary_stream */
@@ -855,21 +841,21 @@ tmpegts_video_cb(const void* data, int data_bytes,
             }
             else if (read_pts_dts(vi->frame_data, &pts, &dts) == 0)
             {
-                LLOGLN(10, ("tmpegts_video_cb: pts %d dts %d", pts, dts));
+                LOGLN(10, (0, LOGF "pts %d dts %d", LOGP, pts, dts));
                 vai->last_video_dts = dts;
                 mstime_dts = dts - vai->cdiff;
             }
             else
             {
-                LLOGLN(0, ("tmpegts_video_cb: read_pts_dts failed"));
+                LOGLN(0, (0, LOGF "read_pts_dts failed", LOGP));
                 mstime_dts = now;
             }
-            LLOGLN(10, ("tmpegts_video_cb: now - mstime_dts = %d", now - mstime_dts));
+            LOGLN(10, (0, LOGF "now - mstime_dts = %d", LOGP, now - mstime_dts));
             /* https://en.wikipedia.org/wiki/Packetized_elementary_stream */
             remainder = (unsigned char)(vi->frame_data[8]);
             cdata = (unsigned char*)(vi->frame_data + (9 + remainder));
             cdata_bytes = vi->frame_data_pos - (9 + remainder);
-            LLOGLN(10, ("cdata_bytes %d", cdata_bytes));
+            LOGLN(10, (0, LOGF "cdata_bytes %d", LOGP, cdata_bytes));
             mtwvi = (struct main_to_worker_video_item*)
                     calloc(sizeof(struct main_to_worker_video_item), 1);
             if (mtwvi != NULL)
@@ -879,8 +865,8 @@ tmpegts_video_cb(const void* data, int data_bytes,
                 {
                     memcpy(mtwvi->data, cdata, cdata_bytes);
                     mtwvi->data_bytes = cdata_bytes;
-                    LLOGLN(10, ("tmpegts_video_cb: audio_latency %d",
-                           vai->audio_latency));
+                    LOGLN(10, (0, LOGF "audio_latency %d", LOGP,
+                          vai->audio_latency));
                     mtwvi->mstime_dts = mstime_dts + vai->audio_latency +
                                         HD_AUDIO_MSDELAY - 750;
                     if (add_main_to_worker_video_item(vai, mtwvi) != 0)
@@ -903,8 +889,8 @@ tmpegts_video_cb(const void* data, int data_bytes,
     {
         memcpy(vi->frame_data + vi->frame_data_pos, data, data_bytes);
         vi->frame_data_pos += data_bytes;
-        LLOGLN(10, ("vi->frame_data_pos %d vi->this_pdu_bytes %d",
-               vi->frame_data_pos, vi->this_pdu_bytes));
+        LOGLN(10, (0, LOGF "vi->frame_data_pos %d vi->this_pdu_bytes %d",
+              LOGP, vi->frame_data_pos, vi->this_pdu_bytes));
     }
     return rv;
 }
@@ -932,7 +918,7 @@ tmpegts_audio_cb(const void* data, int data_bytes,
     ai = vai->ai;
     if (mpegts->payload_unit_start_indicator)
     {
-        LLOGLN(10, ("tmpegts_audio_cb: start"));
+        LOGLN(10, (0, LOGF "start", LOGP));
         ai->this_pdu_bytes = 0;
         /* https://en.wikipedia.org/wiki/Packetized_elementary_stream */
         if ((ai->frame_data[0] == 0) && (ai->frame_data[1] == 0) &&
@@ -953,12 +939,12 @@ tmpegts_audio_cb(const void* data, int data_bytes,
         {
             if (read_pts_dts(ai->frame_data, &pts, &dts) == 0)
             {
-                LLOGLN(10, ("tmpegts_audio_cb: pts %d dts %d", pts, dts));
+                LOGLN(10, (0, LOGF "pts %d dts %d", LOGP, pts, dts));
                 vai->last_audio_dts = dts;
             }
             else
             {
-                LLOGLN(0, ("tmpegts_audio_cb: read_pts_dts failed"));
+                LOGLN(0, (0, LOGF, "read_pts_dts failed", LOGP));
             }
             /* https://en.wikipedia.org/wiki/Packetized_elementary_stream */
             remainder = (unsigned char)(ai->frame_data[8]);
@@ -1002,7 +988,7 @@ tmpegts_program_cb(const void* data, int data_bytes,
     struct video_audio_info* vai;
     struct program_info* pi;
 
-    LLOGLN(10, ("tmpegts_program_cb: data_bytes %d", data_bytes));
+    LOGLN(10, (0, LOGF "data_bytes %d", LOGP, data_bytes));
     mlcbi = (struct mlcb_info*)udata;
     vai = mlcbi->vai;
     pi = vai->pi;
@@ -1018,8 +1004,8 @@ tmpegts_program_cb(const void* data, int data_bytes,
         pi->frame_data_pos += data_bytes;
         if (mlcbi->cb->num_pids == 2)
         {
-            LLOGLN(0, ("tmpegts_program_cb: adding pids for "
-                   "video and audio"));
+            LOGLN(0, (0, LOGF "adding pids for "
+                  "video and audio", LOGP));
             mlcbi->cb->pids[2] = 0x31;
             mlcbi->cb->pids[3] = 0x34;
             //mlcbi->cb->pids[2] = 0x41;
@@ -1045,7 +1031,7 @@ tmpegts_zero_cb(const void* data, int data_bytes,
     int bytes;
     char* ptr;
 
-    LLOGLN(10, ("tmpegts_zero_cb: data_bytes %d", data_bytes));
+    LOGLN(10, (0, LOGF "data_bytes %d", LOGP, data_bytes));
     mlcbi = (struct mlcb_info*)udata;
     vai = mlcbi->vai;
     zi = vai->zi;
@@ -1071,7 +1057,7 @@ tmpegts_zero_cb(const void* data, int data_bytes,
                 ptr = zi->frame_data + 9;
                 while (bytes > 0)
                 {
-                    LLOGLN(0, ("tmpegts_zero_cb: found program 0x%x", ptr[3]));
+                    LOGLN(0, (0, LOGF "found program 0x%x", LOGP, ptr[3]));
                     if (program_pid == 0)
                     {
                         program_pid = (unsigned char)(ptr[3]);
@@ -1082,7 +1068,7 @@ tmpegts_zero_cb(const void* data, int data_bytes,
             }
             if (program_pid != 0)
             {
-                LLOGLN(0, ("tmpegts_zero_cb: adding program 0x%x", program_pid));
+                LOGLN(0, (0, LOGF "adding program 0x%x", LOGP, program_pid));
                 mlcbi->cb->pids[1] = program_pid;
                 mlcbi->cb->procs[1] = tmpegts_program_cb;
                 mlcbi->cb->num_pids = 2;
@@ -1103,7 +1089,7 @@ hdhome_run_callback(int sck, void* udata)
     int lbytes;
     struct mlcb_info* mlcbi;
 
-    LLOGLN(10, ("hdhome_run_callback"));
+    LOGLN(10, (0, LOGF, LOGP));
     mlcbi = (struct mlcb_info*)udata;
     error = 0;
     bytes = 32 * 1024;
@@ -1222,72 +1208,72 @@ main(int argc, char** argv)
     vai.zi = &zi;
     if (pipe(vai.main_to_worker_video_pipe) != 0)
     {
-        LLOGLN(0, ("pipe failed"));
+        LOGLN(0, (0, LOGF "pipe failed", LOGP));
         return 1;
     }
     if (pipe(vai.worker_to_main_video_pipe) != 0)
     {
-        LLOGLN(0, ("pipe failed"));
+        LOGLN(0, (0, LOGF "pipe failed", LOGP));
         return 1;
     }
     if (pipe(vai.main_to_worker_audio_pipe) != 0)
     {
-        LLOGLN(0, ("pipe failed"));
+        LOGLN(0, (0, LOGF "pipe failed", LOGP));
         return 1;
     }
     vai.mutex = (pthread_mutex_t*)malloc(sizeof(pthread_mutex_t));
     if (vai.mutex == NULL)
     {
-        LLOGLN(0, ("malloc failed"));
+        LOGLN(0, (0, LOGF "malloc failed", LOGP));
         return 1;
     }
     if (pthread_mutex_init(vai.mutex, NULL) != 0)
     {
-        LLOGLN(0, ("pthread_mutex_init failed"));
+        LOGLN(0, (0, LOGF "pthread_mutex_init failed", LOGP));
         return 1;
     }
     vai.main_to_worker_video_list = list_create();
     if (vai.main_to_worker_video_list == NULL)
     {
-        LLOGLN(0, ("list_create failed"));
+        LOGLN(0, (0, LOGF "list_create failed", LOGP));
         return 1;
     }
     vai.worker_to_main_video_list = list_create();
     if (vai.worker_to_main_video_list == NULL)
     {
-        LLOGLN(0, ("list_create failed"));
+        LOGLN(0, (0, LOGF "list_create failed", LOGP));
         return 1;
     }
     vai.main_to_worker_audio_list = list_create();
     if (vai.main_to_worker_audio_list == NULL)
     {
-        LLOGLN(0, ("list_create failed"));
+        LOGLN(0, (0, LOGF "list_create failed", LOGP));
         return 1;
     }
     if (hdhome_run_codec_init() != 0)
     {
-        LLOGLN(0, ("hdhome_run_codec_init failed"));
+        LOGLN(0, (0, LOGF "hdhome_run_codec_init failed", LOGP));
         return 1;
     }
     if (hdhome_run_x11_init() != 0)
     {
-        LLOGLN(0, ("hdhome_run_x11_init failed"));
+        LOGLN(0, (0, LOGF "hdhome_run_x11_init failed", LOGP));
         return 1;
     }
     if (hdhome_run_x11_create(&g_gui) != 0)
     {
-        LLOGLN(0, ("hdhome_run_x11_create failed"));
+        LOGLN(0, (0, LOGF "hdhome_run_x11_create failed", LOGP));
         return 1;
     }
     error = hdhome_run_codec_audio_create(&(ai.ac3_handle), AUDIO_CODEC_ID_AC3);
     if (error != 0)
     {
-        LLOGLN(0, ("hdhome_run_codec_ac3_create failed error %d", error));
+        LOGLN(0, (0, LOGF "hdhome_run_codec_ac3_create failed error %d", LOGP, error));
     }
     error = hdhome_run_codec_video_create(&(vi.mpeg2_handle), VIDEO_CODEC_ID_MPEG2);
     if (error != 0)
     {
-        LLOGLN(0, ("hdhome_run_codec_mpeg2_create failed error %d", error));
+        LOGLN(0, (0, LOGF "hdhome_run_codec_mpeg2_create failed error %d", LOGP, error));
     }
     //hdhr = hdhomerun_device_create(HDHOMERUN_DEVICE_ID_WILDCARD, 0, 0, 0);
     //hdhr = hdhomerun_device_create(HDHOMERUN_DEVICE_ID_WILDCARD, 0x0a00000e, 0, 0);
@@ -1297,9 +1283,9 @@ main(int argc, char** argv)
     if (hdhr != NULL)
     {
         dev_name = hdhomerun_device_get_name(hdhr);
-        LLOGLN(0, ("opened device %s", dev_name));
+        LOGLN(0, (0, LOGF "opened device %s", LOGP, dev_name));
         error = hdhomerun_device_stream_start(hdhr);
-        LLOGLN(0, ("hdhomerun_device_stream_start %d", error));
+        LOGLN(0, (0, LOGF "hdhomerun_device_stream_start %d", LOGP, error));
         if (error == 1)
         {
             memset(&mlcbi, 0, sizeof(mlcbi));
@@ -1308,7 +1294,7 @@ main(int argc, char** argv)
             mlcbi.vai = &vai;
             if (pipe(mlcbi.term_pipe) != 0)
             {
-                LLOGLN(0, ("pipe failed"));
+                LOGLN(0, (0, LOGF "pipe failed", LOGP));
                 return 1;
             }
             scks[0] = -1;

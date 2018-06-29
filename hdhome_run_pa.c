@@ -23,18 +23,7 @@
 #include <pulse/pulseaudio.h>
 
 #include "hdhome_run_pa.h"
-
-#define LLOG_LEVEL 1
-#define LLOGLN(_level, _args) \
-  do \
-  { \
-    if (_level < LLOG_LEVEL) \
-    { \
-        printf _args ; \
-        printf("\n"); \
-    } \
-  } \
-  while (0)
+#include "hdhome_run_log.h"
 
 struct hdhomerun_pa
 {
@@ -55,19 +44,19 @@ hdhome_run_pa_context_state_callback(pa_context* context, void* userdata)
     switch (state)
     {
         case PA_CONTEXT_READY:
-            LLOGLN(0, ("cap_pa_context_state_callback: PA_CONTEXT_READY"));
+            LOGLN(0, (0, LOGF "PA_CONTEXT_READY", LOGP));
             pa_threaded_mainloop_signal(self->pa_mainloop, 0);
             break;
 
         case PA_CONTEXT_FAILED:
         case PA_CONTEXT_TERMINATED:
-            LLOGLN(0, ("cap_pa_context_state_callback: "
-                   "PA_CONTEXT_FAILED/PA_CONTEXT_TERMINATED %d", (int)state));
+            LOGLN(0, (0, LOGF "PA_CONTEXT_FAILED/PA_CONTEXT_TERMINATED %d",
+                  LOGP, (int)state));
             pa_threaded_mainloop_signal(self->pa_mainloop, 0);
             break;
 
         default:
-            LLOGLN(0, ("cap_pa_context_state_callback: state %d", (int)state));
+            LOGLN(0, (0, LOGF "state %d", LOGP, (int)state));
             break;
     }
 }
@@ -85,14 +74,14 @@ hdhome_run_pa_init(const char* name, void** handle)
     self->pa_mainloop = pa_threaded_mainloop_new();
     if (self->pa_mainloop == 0)
     {
-        LLOGLN(0, ("hdhome_run_pa_init: pa_threaded_mainloop_new failed"));
+        LOGLN(0, (0, LOGF "pa_threaded_mainloop_new failed", LOGP));
         return 1;
     }
     api = pa_threaded_mainloop_get_api(self->pa_mainloop);
     self->pa_context = pa_context_new(api, name);
     if (self->pa_context == 0)
     {
-        LLOGLN(0, ("hdhome_run_pa_init: pa_context_new failed"));
+        LOGLN(0, (0, LOGF "pa_context_new failed", LOGP));
         pa_threaded_mainloop_free(self->pa_mainloop);
         return 2;
     }
@@ -100,7 +89,7 @@ hdhome_run_pa_init(const char* name, void** handle)
                                   hdhome_run_pa_context_state_callback, self);
     if (pa_context_connect(self->pa_context, NULL, PA_CONTEXT_NOFLAGS, NULL))
     {
-        LLOGLN(0, ("hdhome_run_pa_init: pa_context_connect failed"));
+        LOGLN(0, (0, LOGF "pa_context_connect failed", LOGP));
         pa_context_unref(self->pa_context);
         pa_threaded_mainloop_free(self->pa_mainloop);
         return 3;
@@ -108,7 +97,7 @@ hdhome_run_pa_init(const char* name, void** handle)
     pa_threaded_mainloop_lock(self->pa_mainloop);
     if (pa_threaded_mainloop_start(self->pa_mainloop) < 0)
     {
-        LLOGLN(0, ("hdhome_run_pa_init: pa_threaded_mainloop_start failed"));
+        LOGLN(0, (0, LOGF "pa_threaded_mainloop_start failed", LOGP));
         pa_threaded_mainloop_unlock(self->pa_mainloop);
         /* todo: cleanup */
         return 4;
@@ -122,7 +111,7 @@ hdhome_run_pa_init(const char* name, void** handle)
         }
         if (!PA_CONTEXT_IS_GOOD(state))
         {
-            LLOGLN(0, ("hdhome_run_pa_init: bad context state (%d)",
+            LOGLN(0, (0, LOGF "bad context state (%d)", LOGP,
                    pa_context_errno(self->pa_context)));
             pa_threaded_mainloop_unlock(self->pa_mainloop);
             /* todo: cleanup */
@@ -161,16 +150,16 @@ hdhome_run_pa_stream_state_callback(pa_stream* stream, void* userdata)
     switch (state)
     {
         case PA_STREAM_READY:
-            LLOGLN(0, ("hdhome_run_pa_stream_state_callback: PA_STREAM_READY"));
+            LOGLN(0, (0, LOGF "PA_STREAM_READY", LOGP));
             pa_threaded_mainloop_signal(self->pa_mainloop, 0);
             break;
         case PA_STREAM_FAILED:
         case PA_STREAM_TERMINATED:
-            LLOGLN(0, ("hdhome_run_pa_stream_state_callback: state %d", (int)state));
+            LOGLN(0, (0, LOGF "state %d", LOGP, (int)state));
             pa_threaded_mainloop_signal(self->pa_mainloop, 0);
             break;
         default:
-            LLOGLN(0, ("hdhome_run_pa_stream_state_callback: state %d", (int)state));
+            LOGLN(0, (0, LOGF "state %d", LOGP, (int)state));
             break;
     }
 }
@@ -287,8 +276,8 @@ hdhome_run_pa_start(void* handle, const char* name, int ms_latency, int format)
         }
         if (!PA_STREAM_IS_GOOD(state))
         {
-            LLOGLN(0, ("hdhome_run_pa_start: bad stream state (%d)",
-                   pa_context_errno(self->pa_context)));
+            LOGLN(0, (0, LOGF "bad stream state (%d)", LOGP,
+                  pa_context_errno(self->pa_context)));
             /* todo: cleanup */
             self->pa_stream = 0;
             return 5;
@@ -354,7 +343,7 @@ hdhome_run_pa_play(void* handle, void* data, int data_bytes)
         }
         if (len < 0)
         {
-            LLOGLN(0, ("hdhome_run_pa_play: pa_stream_writable_size failed"));
+            LOGLN(0, (0, LOGF "pa_stream_writable_size failed", LOGP));
             pa_threaded_mainloop_unlock(self->pa_mainloop);
             return 1;
         }
@@ -366,7 +355,7 @@ hdhome_run_pa_play(void* handle, void* data, int data_bytes)
                               PA_SEEK_RELATIVE);
         if (ret < 0)
         {
-            LLOGLN(0, ("hdhome_run_pa_play: pa_stream_write failed (%d)",
+            LOGLN(0, (0, LOGF "pa_stream_write failed (%d)", LOGP,
                    pa_context_errno(self->pa_context)));
             pa_threaded_mainloop_unlock(self->pa_mainloop);
             return 2;
@@ -398,7 +387,7 @@ hdhome_run_pa_play_non_blocking(void* handle, void* data, int data_bytes,
         len = pa_stream_writable_size(self->pa_stream);
         if (len < 0)
         {
-            LLOGLN(0, ("hdhome_run_pa_play: pa_stream_writable_size failed"));
+            LOGLN(0, (0, LOGF "pa_stream_writable_size failed", LOGP));
             pa_threaded_mainloop_unlock(self->pa_mainloop);
             return 1;
         }
@@ -410,7 +399,7 @@ hdhome_run_pa_play_non_blocking(void* handle, void* data, int data_bytes,
                               PA_SEEK_RELATIVE);
         if (ret < 0)
         {
-            LLOGLN(0, ("hdhome_run_pa_play: pa_stream_write failed (%d)",
+            LOGLN(0, (0, LOGF "pa_stream_write failed (%d)", LOGP,
                    pa_context_errno(self->pa_context)));
             pa_threaded_mainloop_unlock(self->pa_mainloop);
             return 2;

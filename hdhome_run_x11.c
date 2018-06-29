@@ -31,18 +31,7 @@
 #include <X11/extensions/Xvlib.h>
 
 #include "hdhome_run_x11.h"
-
-#define LLOG_LEVEL 1
-#define LLOGLN(_level, _args) \
-  do \
-  { \
-    if (_level < LLOG_LEVEL) \
-    { \
-        printf _args ; \
-        printf("\n"); \
-    } \
-  } \
-  while (0)
+#include "hdhome_run_log.h"
 
 struct x11_info
 {
@@ -68,7 +57,7 @@ struct x11_info
 int
 hdhome_run_x11_init(void)
 {
-    LLOGLN(0, ("hdhome_run_x11_init:"));
+    LOGLN(0, (0, LOGF, LOGP));
     return 0;
 }
 
@@ -89,7 +78,7 @@ hdhome_run_x11_create(void** obj)
     XvAdaptorInfo* ai;
     struct x11_info* self;
 
-    LLOGLN(0, ("hdhome_run_x11_create:"));
+    LOGLN(0, (0, LOGF, LOGP));
     self = (struct x11_info*)calloc(sizeof(struct x11_info), 1);
     if (self == NULL)
     {
@@ -99,7 +88,7 @@ hdhome_run_x11_create(void** obj)
     self->disp = XOpenDisplay(NULL);
     if (self->disp == 0)
     {
-        LLOGLN(0, ("error opening X display"));
+        LOGLN(0, (0, LOGF "error opening X display", LOGP));
         return 2;
     }
     self->disp_fd = ConnectionNumber(self->disp);
@@ -116,7 +105,7 @@ hdhome_run_x11_create(void** obj)
                            &event_base, &error_base);
     if (ret != Success)
     {
-        LLOGLN(0, ("XvQueryExtension failedd"));
+        LOGLN(0, (0, LOGF "XvQueryExtension failedd", LOGP));
         return 3;
     }
     self->xv_event_base = event_base;
@@ -124,7 +113,7 @@ hdhome_run_x11_create(void** obj)
                           &num_adaptors, &ai);
     if (ret != Success)
     {
-        LLOGLN(0, ("XvQueryAdaptors failed"));
+        LOGLN(0, (0, LOGF "XvQueryAdaptors failed", LOGP));
         return 4;
     }
     for (index = 0; index < num_adaptors; index++)
@@ -158,12 +147,12 @@ hdhome_run_x11_get_buffer(void* obj, int width, int height, int format,
     struct x11_info* self;
     int bytes;
 
-    LLOGLN(10, ("hdhome_run_x11_get_buffer:"));
+    LOGLN(10, (0, LOGF, LOGP));
     self = (struct x11_info*)obj;
     if ((width != self->vwidth) || (height != self->vheight))
     {
-        LLOGLN(0, ("hdhome_run_x11_get_buffer: createing buffer for %dx%d "
-               "video", width, height));
+        LOGLN(0, (0, LOGF "createing buffer for %dx%d "
+               "video", LOGP, width, height));
         self->vwidth = width;
         self->vheight = height;
     }
@@ -197,11 +186,11 @@ hdhome_run_x11_show_buffer(void* obj, int width, int height, int format,
     XvImage * image;
     int ratio;
 
-    LLOGLN(10, ("hdhome_run_x11_show_buffer:"));
+    LOGLN(10, (0, LOGF, LOGP));
     self = (struct x11_info*)obj;
     if (self->got_vis_not == 0)
     {
-        LLOGLN(0, ("hdhome_run_x11_show_buffer: g_got_vis_not is false"));
+        LOGLN(0, (0, LOGF "g_got_vis_not is false", LOGP));
         return 1;
     }
 
@@ -277,7 +266,7 @@ hdhome_run_x11_main_loop(void* obj, int* sck, tmlcb* cb, int count,
     int mstimeout;
     struct timeval time;
 
-    LLOGLN(0, ("hdhome_run_x11_main_loop:"));
+    LOGLN(0, (0, LOGF, LOGP));
     self = (struct x11_info*)obj;
     mstimeout = 15;
     error = 0;
@@ -323,8 +312,8 @@ hdhome_run_x11_main_loop(void* obj, int* sck, tmlcb* cb, int count,
                 error = (cb[index])(sck[index], udata);
                 if (error != 0)
                 {
-                    LLOGLN(0, ("hdhome_run_x11_main_loop: cb failed "
-                           "index %d sck %d error %d",
+                    LOGLN(0, (0, LOGF, "cb failed "
+                           "index %d sck %d error %d", LOGP,
                            index, sck[index], error));
                 }
             }
@@ -334,10 +323,10 @@ hdhome_run_x11_main_loop(void* obj, int* sck, tmlcb* cb, int count,
                 switch (evt.type)
                 {
                     case MapNotify:
-                        LLOGLN(10, ("hdhome_run_x11_main_loop: MapNotify"));
+                        LOGLN(10, (0, LOGF "MapNotify", LOGP));
                         break;
                     case VisibilityNotify:
-                        LLOGLN(10, ("hdhome_run_x11_main_loop: VisibilityNotify"));
+                        LOGLN(10, (0, LOGF "VisibilityNotify", LOGP));
                         self->got_vis_not = 1;
                         break;
                     case KeyPress:
